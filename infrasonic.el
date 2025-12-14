@@ -4,6 +4,10 @@
 
 ;; Author: Kai Bagley <kaibagley@proton.mail>
 ;; Maintainer: Kai Bagley <kaibagley@proton.mail>
+;; Keywords: multimedia
+;; Package-Requires: ((emacs "30") (plz "0.9"))
+;; Version: 0.1.1
+;; URL: https://github.com/alphapapa/listen.el
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -31,6 +35,7 @@
 
 (require 'plz)          ; HTTP requests
 (require 'auth-source)  ; authinfo
+(require 'json)         ; for Emacs < 30
 
 (require 'map)          ; for map-nested-elt
 (require 'cl-lib)       ; for cl-incf/decf
@@ -93,7 +98,7 @@ Return an alist of strings: ((\"u\" . \"myusername\") (\"t\" . \"<randomstring>\
 Note that the token and salt are leaked locally in the player's process information."
   (or infrasonic--auth-params
       (let* ((creds (or (infrasonic--get-credentials)
-                        (user-error "No auth-source entry found for host %S" infrasonic-url)))
+                        (error "No auth-source entry found for host %S" infrasonic-url)))
              (user (plist-get creds :user))
              (pass (funcall (plist-get creds :secret)))
              (salt (format "%06x" (random #xffffff)))
@@ -142,7 +147,7 @@ Should be called from a buffer containing an API response."
              (alist-get 'message (alist-get 'error response))))
     response))
 
-(defun infrasonic--api-call (endpoint &optional params callback body)
+(defun infrasonic-api-call (endpoint &optional params callback body)
   "Make a call to the OpenSubsonic API.
 Returns the parsed JSON if CALLBACK is nil.
 Returns the curl process object if CALLBACK is non-nil.
@@ -156,7 +161,7 @@ parsed JSON.
 
 The JSON should usually be processed by `infrasonic--process-api-response'."
   (when (equal infrasonic-url "")
-    (user-error "Please set `infrasonic-url'"))
+    (error "Please set `infrasonic-url'"))
   (let* ((api-params (append (infrasonic--get-auth-params) params))
          (http-method (if body 'post 'get))
          (api-url (infrasonic--build-url endpoint api-params))
@@ -167,11 +172,11 @@ The JSON should usually be processed by `infrasonic--process-api-response'."
       :body body
       :as #'infrasonic--process-api-response
       :then (or callback 'sync)
-      :else (lambda (err) (user-error "Subsonic API request error: %s" err)))))
+      :else (lambda (err) (error "Subsonic API request error: %s" err)))))
 
 ;;;; Data formatting
 
-(defun infrasonic--get-stream-url (id)
+(defun infrasonic-get-stream-url (id)
   "Create a streaming URL for track with ID.
 Returns a complete URL for MPV or VLC to directly stream from the server."
   (infrasonic--build-url
@@ -187,7 +192,7 @@ Returns nil, only displaying a success or failure message."
   (interactive)
   (condition-case err
       (progn
-        (infrasonic--api-call "ping")
+        (infrasonic-api-call "ping")
         (message "Successfully pinged OpenSubsonic server!"))
     (message "Failed to ping server: %s" (error-message-string err))))
 
@@ -200,23 +205,23 @@ details.
 ROOTKEY is the top-level JSON key in the API repsonse, ITEMKEY is the
 inner key (for example, \"searchResult3\" and \"song\"). Go to the above link for details.
 PARAMS are optional API parameters."
-  (when-let* ((response (infrasonic--api-call endpoint params))
+  (when-let* ((response (infrasonic-api-call endpoint params))
               (items (map-nested-elt response (list rootkey itemkey))))
     items))
 
 ;;; Playlists
 
-(defun infrasonic--get-playlists ()
+(defun infrasonic-get-playlists ()
   "Fetch all of the user's playlists from the server.
 Returns an alist mapping playlist names to their IDs: ((name . id) ...)."
-  (when-let* ((response (infrasonic--api-call "getPlaylists"))
-              (items (map-nested-elt response '(playlists playlist))))
+  (when-let* ((items (infrasonic--get-items "getPlaylists"
+                                            'playlists 'playlist)))
     (mapcar (lambda (item)
               (cons (alist-get 'name item)
                     (format "%s" (alist-get 'id item))))
             items)))
 
-(defun infrasonic--get-playlist-tracks (id)
+(defun infrasonic-get-playlist-tracks (id)
   "Fetch all tracks in playlist with ID.
 Returns a list of parsed JSON tracks."
   (infrasonic--get-items "getPlaylist"
@@ -236,8 +241,8 @@ Returns a list of parsed JSON tracks."
 Returns the unparsed API response.
 
 Send a request to the \"star\" or \"unstar\" Subsonic endpoints, star (when STAR-P is non-nil) or
-unstar ID. CALLBACK is passed to `infrasonic--api-call' and is evaluated on the response data."
-  (infrasonic--api-call (if star-p "star" "unstar")
+unstar ID. CALLBACK is passed to `infrasonic-api-call' and is evaluated on the response data."
+  (infrasonic-api-call (if star-p "star" "unstar")
                         `(("id" . ,id))
                         callback))
 
@@ -251,7 +256,7 @@ When SUBMISSION-P is non-nil, server is notified that ID is finished.
 When SUBMISSION-P is nil, server is notified that ID is \"now playing\"."
   (let* ((params `(("id" . ,id)
                    ("submission" . ,(if submission-p "true" "false")))))
-    (infrasonic--api-call "scrobble" params #'ignore)))
+    (infrasonic-api-call "scrobble" params #'ignore)))
 
 ;;; Random
 
@@ -278,7 +283,7 @@ Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
 
 ;;; Bulk get tracks
 
-(defun infrasonic--get-all-tracks (id &optional level)
+(defun infrasonic-get-all-tracks (id &optional level)
   "Fetch all tracks under item associated with ID.
 Returns a list of parsed JSON tracks.
 
@@ -292,7 +297,7 @@ LEVEL determines what level of the hierarchy we are on:
                                             'artist 'album
                                             `(("id" . ,id)))))
          (mapcan (lambda (album)
-                   (infrasonic--get-all-tracks (alist-get 'id album) :album))
+                   (infrasonic-get-all-tracks (alist-get 'id album) :album))
                  albums)))
       (:album
        (infrasonic--get-items "getAlbum"
@@ -301,7 +306,7 @@ LEVEL determines what level of the hierarchy we are on:
 
 ;;;; Write requests
 
-(defun infrasonic--create-playlist (ids name)
+(defun infrasonic-create-playlist (ids name)
   "Create a playlist with NAME containing IDS on the server.
 Returns the newly created playlist.
 
@@ -315,17 +320,17 @@ This function uses a POST request since large playlists can return HTTP error 41
                                     (list "songId" id))
                                   ids)))
          (body-str (url-build-query-string body-list nil t)))
-    (unless (infrasonic--api-call "createPlaylist"
+    (unless (infrasonic-api-call "createPlaylist"
                                   nil nil
                                   body-str)
-      (user-error "Playlist was not created."))
+      (error "Playlist was not created."))
     (message "Playlist '%s' was created with '%d' songs."
             name (length ids))))
 
 (defun infrasonic--read-playlist ()
   "Prompt user to select a Subsonic playlist using `completing-read'.
 Returns the selected playlist's ID as a string."
-  (let* ((playlists (infrasonic--get-playlists))
+  (let* ((playlists (infrasonic-get-playlists))
          (name (completing-read "Playlist: " playlists nil t)))
     (alist-get name playlists nil nil #'equal)))
 
@@ -334,7 +339,7 @@ Returns the selected playlist's ID as a string."
 
 When called interactively, a `completing-read' prompt for a playlist is shown."
   (interactive (list (infrasonic--read-playlist)))
-  (when (infrasonic--api-call "deletePlaylist"
+  (when (infrasonic-api-call "deletePlaylist"
                               `(("id" . ,id)))
     (message "Playlist deleted.")))
 
