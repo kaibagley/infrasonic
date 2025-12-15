@@ -35,7 +35,7 @@
 
 (require 'plz)          ; HTTP requests
 (require 'auth-source)  ; authinfo
-(require 'json)         ; for Emacs < 30
+(require 'json)         ; for Emacs < 30 (do i need this?)
 
 (require 'map)          ; for map-nested-elt
 (require 'cl-lib)       ; for cl-incf/decf
@@ -176,13 +176,13 @@ The JSON should usually be processed by `infrasonic--process-api-response'."
 
 ;;;; Data formatting
 
-(defun infrasonic-get-stream-url (id)
-  "Create a streaming URL for track with ID.
+(defun infrasonic-get-stream-url (track-id)
+  "Create a streaming URL for track with TRACK-ID.
 Returns a complete URL for MPV or VLC to directly stream from the server."
   (infrasonic--build-url
    "stream"
    (append (infrasonic--get-auth-params)
-           `(("id" . ,id)))))
+           `(("id" . ,track-id)))))
 
 ;;;; Requests
 
@@ -209,6 +209,66 @@ PARAMS are optional API parameters."
               (items (map-nested-elt response (list rootkey itemkey))))
     items))
 
+;;; ID3 Getters
+;; These functions get artists, albums and tracks using the ID3 endpoints
+;; They also add:
+;; - subsonic-type element (:artist, :album, :track),
+;; - name element (tracks use title instead of name, so ensure everything has a name
+
+(defun infrasonic-get-artists ()
+  "Get a list of artists.
+Returns a flat list of artists, with (subsonic-type . :artist) appended
+to each artist.
+
+The \"getArtists\" endpoint returns a list of lists, each sublist being
+artists under the alphabetical index:
+(((name . \"#\") (artist . (<list of artists>)))
+ ((name . \"a\") (artist . (<list of artists>)))
+ ((name . \"b\") (artist . (<list of artists>)))
+ ...)
+This function returns artists completely flattened:
+((<artist>) (<artist>) ...)"
+  (let ((indexes (infrasonic--get-items "getArtists"
+                                        'artists 'index)))
+    ;; flatten the indexes -> list of artist-lists
+    (mapcan (lambda (index)
+              (let ((artists (alist-get 'artist index)))
+                (mapcar (lambda (artist)
+                          (append '((subsonic-type . :artist))
+                                  artist))
+                        artists)))
+            indexes)))
+
+(defun infrasonic-get-artist (artist-id)
+  "Get a list of albums for artist with ARTIST-ID.
+Returns a flat list of albums by artist with ARTIST-ID, with (subsonic-type .
+:album) appended to each album.
+
+The \"getArtists\" endpoint returns a list of albums."
+  (let ((albums (infrasonic--get-items "getArtist"
+                                       'artist 'album
+                                       `(("id" . ,artist-id)))))
+    (mapcar (lambda (album)
+              (append '((subsonic-type . :album))
+                      album))
+            albums)))
+
+(defun infrasonic-get-album (album-id)
+  "Get a list of tracks for album with ALBUM-ID
+Returns a flat list of tracks in album with ALBUM-ID, with (subsonic-type
+. :track) and (name . <track name>) appended to each track.
+
+The \"getAlbum\" endpoint returns a list of tracks. The tracks do not
+contain a name element like albums and artists do, so we add it here."
+  (let ((tracks (infrasonic--get-items "getAlbum"
+                                       'album 'song
+                                       `(("id" . ,album-id)))))
+    (mapcar (lambda (track)
+              (append `((subsonic-type . :track)
+                        (name . ,(alist-get 'title track)))
+                      track))
+            tracks)))
+
 ;;; Playlists
 
 (defun infrasonic-get-playlists ()
@@ -221,47 +281,47 @@ Returns an alist mapping playlist names to their IDs: ((name . id) ...)."
                     (format "%s" (alist-get 'id item))))
             items)))
 
-(defun infrasonic-get-playlist-tracks (id)
-  "Fetch all tracks in playlist with ID.
+(defun infrasonic-get-playlist-tracks (playlist-id)
+  "Fetch all tracks in playlist with PLAYLIST-ID.
 Returns a list of parsed JSON tracks."
   (infrasonic--get-items "getPlaylist"
                          'playlist 'entry
-                         `(("id" . ,id))))
+                         `(("id" . ,playlist-id))))
 
 ;;; Star
 
 (defun infrasonic-get-starred-tracks ()
-  "Fetch all starred songs from the server.
+  "Fetch all starred tracks from the server.
 Returns a list of parsed JSON tracks."
   (infrasonic--get-items "getStarred2"
                          'starred2 'song))
 
-(defun infrasonic-star (id star-p &optional callback)
-  "Set ID's (artist, album or track) star status according to STAR-P.
-Returns the unparsed API response.
+(defun infrasonic-star (item-id star-p &optional callback)
+  "Set ITEM-ID's (artist, album or track) star status according to STAR-P.
+Returns the parsed API response.
 
 Send a request to the \"star\" or \"unstar\" Subsonic endpoints, star (when STAR-P is non-nil) or
-unstar ID. CALLBACK is passed to `infrasonic-api-call' and is evaluated on the response data."
+unstar ITEM-ID. CALLBACK is passed to `infrasonic-api-call' and is evaluated on the response data."
   (infrasonic-api-call (if star-p "star" "unstar")
-                        `(("id" . ,id))
+                        `(("id" . ,item-id))
                         callback))
 
 ;;; Scrobble
 
-(defun infrasonic-scrobble (id submission-p)
-  "Scrobble the item with ID to the Subsonic API.
+(defun infrasonic-scrobble (track-id submission-p)
+  "Scrobble the track with TRACK-ID to the Subsonic API.
 Returns the unparsed API response.
 
-When SUBMISSION-P is non-nil, server is notified that ID is finished.
-When SUBMISSION-P is nil, server is notified that ID is \"now playing\"."
-  (let* ((params `(("id" . ,id)
+When SUBMISSION-P is non-nil, server is notified that TRACK-ID is finished.
+When SUBMISSION-P is nil, server is notified that TRACK-ID is \"now playing\"."
+  (let* ((params `(("id" . ,track-id)
                    ("submission" . ,(if submission-p "true" "false")))))
     (infrasonic-api-call "scrobble" params #'ignore)))
 
 ;;; Random
 
 (defun infrasonic-get-random-tracks (n)
-  "Fetch N random songs from the server.
+  "Fetch N random tracks from the server.
 Returns a N length list of parsed JSON tracks.
 
 Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
@@ -270,6 +330,43 @@ Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
                          `(("size" . ,(number-to-string n)))))
 
 ;;; Search
+
+(defun infrasonic-search (query)
+  "Search server for QUERY at \"search3\" endpoint for artists, albums and
+tracks.
+Returns a flat list of items:
+(((subsonic-type . :artist) (name . ...) ...)
+ ((subsonic-type . :album) (name . ...) ...)
+ ((subsonic-type . :track) (name . ...) ...)
+ ((subsonic-type . :track) (name . ...) ...))
+
+Each item is a list with an added element `subsonic-type', and tracks
+have the `name' element added."
+  (let* ((max-results (number-to-string (/ listen-subsonic-search-max-results 3)))
+         (params `(("query" . ,query)
+                   ("artistCount" . ,max-results)
+                   ("albumCount" . ,max-results)
+                   ("songCount" . ,max-results)))
+         (response (infrasonic-api-call "search3" params))
+         (result (alist-get 'searchResult3 response))
+         (artists (alist-get 'artist result))
+         (albums (alist-get 'album result))
+         (tracks (alist-get 'song result)))
+    ;; This is pretty ugly
+    (append
+     (mapcar (lambda (artist)
+               (cons (cons 'subsonic-type :artist)
+                     artist))
+             artists)
+     (mapcar (lambda (album)
+               (cons (cons 'subsonic-type :album)
+                     album))
+             albums)
+     (mapcar (lambda (track)
+               (cons (cons 'subsonic-type :track)
+                     (cons (cons 'name (alist-get 'title track))
+                           track)))
+             tracks))))
 
 (defun infrasonic-search-tracks (query)
   "Search the server for tracks matching QUERY.
@@ -283,49 +380,49 @@ Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
 
 ;;; Bulk get tracks
 
-(defun infrasonic-get-all-tracks (id &optional level)
-  "Fetch all tracks under item associated with ID.
+(defun infrasonic-get-all-tracks (item-id &optional level)
+  "Fetch all tracks under item (artist or album) associated with ITEM-ID.
 Returns a list of parsed JSON tracks.
 
 LEVEL determines what level of the hierarchy we are on:
-- :artist: fetches all albums, then all songs by that artist.
-- :album: fetches all songs on the album."
+- :artist: fetches all albums, then all tracks by that artist.
+- :album: fetches all tracks on the album."
   (let ((infrasonic--auth-params (infrasonic--get-auth-params)))
     (pcase level
       (:artist
        (let ((albums (infrasonic--get-items "getArtist"
                                             'artist 'album
-                                            `(("id" . ,id)))))
+                                            `(("id" . ,item-id)))))
          (mapcan (lambda (album)
-                   (infrasonic-get-all-tracks (alist-get 'id album) :album))
+                   (infrasonic-get-all-tracks (alist-get 'item-id album) :album))
                  albums)))
       (:album
        (infrasonic--get-items "getAlbum"
                               'album 'song
-                              `(("id" . ,id)))))))
+                              `(("id" . ,item-id)))))))
 
 ;;;; Write requests
 
-(defun infrasonic-create-playlist (ids name)
-  "Create a playlist with NAME containing IDS on the server.
+(defun infrasonic-create-playlist (track-ids name)
+  "Create a playlist with NAME containing TRACK-IDS on the server.
 Returns the newly created playlist.
 
-IDS should be a list of strings.
+TRACK-IDS should be a list of strings.
 NAME should be a string.
 
 This function uses a POST request since large playlists can return HTTP error 414."
-  ;; we have to pass one songId per song
+  ;; we have to pass one songId per track
   (let* ((body-list (cons `("name" ,name)
                           (mapcar (lambda (id)
                                     (list "songId" id))
-                                  ids)))
+                                  track-ids)))
          (body-str (url-build-query-string body-list nil t)))
     (unless (infrasonic-api-call "createPlaylist"
                                   nil nil
                                   body-str)
       (error "Playlist was not created."))
-    (message "Playlist '%s' was created with '%d' songs."
-            name (length ids))))
+    (message "Playlist '%s' was created with '%d' tracks."
+            name (length track-ids))))
 
 (defun infrasonic--read-playlist ()
   "Prompt user to select a Subsonic playlist using `completing-read'.
@@ -334,24 +431,24 @@ Returns the selected playlist's ID as a string."
          (name (completing-read "Playlist: " playlists nil t)))
     (alist-get name playlists nil nil #'equal)))
 
-(defun infrasonic-delete-playlist (id)
+(defun infrasonic-delete-playlist (playlist-id)
   "Delete a Subsonic playlist with ID.
 
 When called interactively, a `completing-read' prompt for a playlist is shown."
   (interactive (list (infrasonic--read-playlist)))
   (when (infrasonic-api-call "deletePlaylist"
-                              `(("id" . ,id)))
+                              `(("id" . ,playlist-id)))
     (message "Playlist deleted.")))
 
 ;;; Art
 
-(defun infrasonic-get-art-url (id &optional size)
-  "Return the art URL for ID.
+(defun infrasonic-get-art-url (item-id &optional size)
+  "Return the art URL for ITEM-ID.
 
 SIZE is the size of the cover art."
   (infrasonic--build-url "getCoverArt"
                          (append (infrasonic--get-auth-params)
-                                 `(("id" . ,id)
+                                 `(("id" . ,item-id)
                                    ("size" . ,(if size (number-to-string size) "64"))))))
 
 (defun infrasonic-get-art (url file &optional callback)
