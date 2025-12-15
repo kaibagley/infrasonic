@@ -52,7 +52,7 @@
 (defcustom infrasonic-url ""
   "The fully-qualified domain name of your OpenSubsonic-compatible server.
 For example, \"music.example.com\" or \"192.168.0.0:4533\".
-Don't include the procol/scheme or the resource path."
+Don't include the protocol/scheme or the resource path."
   :type 'string
   :group 'infrasonic)
 
@@ -194,7 +194,8 @@ Returns nil, only displaying a success or failure message."
       (progn
         (infrasonic-api-call "ping")
         (message "Successfully pinged OpenSubsonic server!"))
-    (message "Failed to ping server: %s" (error-message-string err))))
+    (error
+     (message "Failed to ping server: %s" (error-message-string err)))))
 
 (defun infrasonic--get-items (endpoint rootkey itemkey &optional params)
   "Get data from ENDPOINT, and extract content using ROOTKEY and ITEMKEY.
@@ -202,7 +203,7 @@ Returns a list of items.
 
 ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp' for
 details.
-ROOTKEY is the top-level JSON key in the API repsonse, ITEMKEY is the
+ROOTKEY is the top-level JSON key in the API response, ITEMKEY is the
 inner key (for example, \"searchResult3\" and \"song\"). Go to the above link for details.
 PARAMS are optional API parameters."
   (when-let* ((response (infrasonic-api-call endpoint params))
@@ -310,7 +311,7 @@ unstar ITEM-ID. CALLBACK is passed to `infrasonic-api-call' and is evaluated on 
 
 (defun infrasonic-scrobble (track-id submission-p)
   "Scrobble the track with TRACK-ID to the Subsonic API.
-Returns the unparsed API response.
+Returns the parsed API response.
 
 When SUBMISSION-P is non-nil, server is notified that TRACK-ID is finished.
 When SUBMISSION-P is nil, server is notified that TRACK-ID is \"now playing\"."
@@ -342,7 +343,7 @@ Returns a flat list of items:
 
 Each item is a list with an added element `subsonic-type', and tracks
 have the `name' element added."
-  (let* ((max-results (number-to-string (/ listen-subsonic-search-max-results 3)))
+  (let* ((max-results (number-to-string (/ infrasonic-search-max-results 3)))
          (params `(("query" . ,query)
                    ("artistCount" . ,max-results)
                    ("albumCount" . ,max-results)
@@ -394,7 +395,7 @@ LEVEL determines what level of the hierarchy we are on:
                                             'artist 'album
                                             `(("id" . ,item-id)))))
          (mapcan (lambda (album)
-                   (infrasonic-get-all-tracks (alist-get 'item-id album) :album))
+                   (infrasonic-get-all-tracks (alist-get 'id album) :album))
                  albums)))
       (:album
        (infrasonic--get-items "getAlbum"
@@ -416,26 +417,19 @@ This function uses a POST request since large playlists can return HTTP error 41
                           (mapcar (lambda (id)
                                     (list "songId" id))
                                   track-ids)))
-         (body-str (url-build-query-string body-list nil t)))
-    (unless (infrasonic-api-call "createPlaylist"
-                                  nil nil
-                                  body-str)
-      (error "Playlist was not created."))
-    (message "Playlist '%s' was created with '%d' tracks."
-            name (length track-ids))))
-
-(defun infrasonic--read-playlist ()
-  "Prompt user to select a Subsonic playlist using `completing-read'.
-Returns the selected playlist's ID as a string."
-  (let* ((playlists (infrasonic-get-playlists))
-         (name (completing-read "Playlist: " playlists nil t)))
-    (alist-get name playlists nil nil #'equal)))
+         (body-str (url-build-query-string body-list nil t))
+         (playlist (infrasonic-api-call "createPlaylist"
+                                        nil nil
+                                        body-str)))
+    (if playlist
+        (progn
+          (message "Playlist '%s' was created with '%d' tracks."
+                   name (length track-ids))
+          playlist)
+      (error "Playlist was not created."))))
 
 (defun infrasonic-delete-playlist (playlist-id)
-  "Delete a Subsonic playlist with ID.
-
-When called interactively, a `completing-read' prompt for a playlist is shown."
-  (interactive (list (infrasonic--read-playlist)))
+  "Delete a Subsonic playlist with PLAYLIST-ID."
   (when (infrasonic-api-call "deletePlaylist"
                               `(("id" . ,playlist-id)))
     (message "Playlist deleted.")))
