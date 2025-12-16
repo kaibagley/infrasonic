@@ -3,7 +3,7 @@
 * API Implementation Status
 ** 1.0.0
 - [ ] download
-- [-] getCoverArt
+- [X] getCoverArt
 - [-] getIndexes
 - [ ] getLicense
 - [-] getMusicDirectory
