@@ -86,7 +86,7 @@ For other operations, generate on the fly using `infrasonic--get-auth-params'.")
   "Standardise ITEM of TYPE.
 Returns the standardised ITEM
 
-Ensures a \"name\" element exists in ITEM, and add a \"subsonic-item\"
+Ensures a \"name\" element exists in ITEM, and add a \"subsonic-type\"
 element according to the ITEMs TYPE."
   (let ((name (or (alist-get 'name item)
                   (alist-get 'title item)
@@ -291,17 +291,21 @@ Returns an alist mapping playlist names to their IDs: ((name . id) ...)."
 (defun infrasonic-get-playlist-tracks (playlist-id)
   "Fetch all tracks in playlist with PLAYLIST-ID.
 Returns a list of parsed JSON tracks."
-  (infrasonic--get-items "getPlaylist"
-                         'playlist 'entry
-                         `(("id" . ,playlist-id))))
+  (let ((tracks (infrasonic--get-items "getPlaylist"
+                                       'playlist 'entry
+                                       `(("id" . ,playlist-id)))))
+    (mapcar (lambda (track) (infrasonic--standardise track :track))
+            tracks)))
 
 ;;; Star
 
 (defun infrasonic-get-starred-tracks ()
   "Fetch all starred tracks from the server.
 Returns a list of parsed JSON tracks."
-  (infrasonic--get-items "getStarred2"
-                         'starred2 'song))
+  (let ((tracks (infrasonic--get-items "getStarred2"
+                                       'starred2 'song)))
+    (mapcar (lambda (track) (infrasonic--standardise track :track))
+            tracks)))
 
 (defun infrasonic-star (item-id star-p &optional callback)
   "Set ITEM-ID's (artist, album or track) star status according to STAR-P.
@@ -335,9 +339,11 @@ STATUS may be either `:playing' or `:finished'."
 Returns a N length list of parsed JSON tracks.
 
 Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
-  (infrasonic--get-items "getRandomSongs"
-                         'randomSongs 'song
-                         `(("size" . ,(number-to-string n)))))
+  (let ((tracks (infrasonic--get-items "getRandomSongs"
+                                       'randomSongs 'song
+                                       `(("size" . ,(number-to-string n))))))
+    (mapcar (lambda (track) (infrasonic--standardise track :track))
+            tracks)))
 
 ;;; Search
 
@@ -362,7 +368,6 @@ have the `name' element added."
          (artists (alist-get 'artist result))
          (albums (alist-get 'album result))
          (tracks (alist-get 'song result)))
-    ;; This is pretty ugly
     (append
      (mapcar (lambda (artist) (infrasonic--standardise artist :artist))
              artists)
@@ -376,10 +381,12 @@ have the `name' element added."
 Returns a list of parsed JSON tracks.
 
 Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
-  (infrasonic--get-items "search3"
-                         'searchResult3 'song
-                         `(("query" . ,query)
-                           ("songCount" . ,(number-to-string infrasonic-search-max-results)))))
+  (let ((tracks (infrasonic--get-items "search3"
+                                       'searchResult3 'song
+                                       `(("query" . ,query)
+                                         ("songCount" . ,(number-to-string infrasonic-search-max-results))))))
+    (mapcar (lambda (track) (infrasonic--standardise track :track))
+            tracks)))
 
 ;;; Bulk get tracks
 
@@ -400,9 +407,11 @@ LEVEL determines what level of the hierarchy we are on:
                    (infrasonic-get-all-tracks (alist-get 'id album) :album))
                  albums)))
       (:album
-       (infrasonic--get-items "getAlbum"
-                              'album 'song
-                              `(("id" . ,item-id)))))))
+       (let ((tracks (infrasonic--get-items "getAlbum"
+                                            'album 'song
+                                            `(("id" . ,item-id)))))
+         (mapcar (lambda (track) (infrasonic--standardise track :track))
+                 tracks))))))
 
 ;;;; Write requests
 
