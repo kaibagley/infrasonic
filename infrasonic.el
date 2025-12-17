@@ -82,6 +82,20 @@ For other operations, generate on the fly using `infrasonic--get-auth-params'.")
 
 ;;;; General helpers
 
+(defun infrasonic--standardise (item type)
+  "Standardise ITEM of TYPE.
+Returns the standardised ITEM
+
+Ensures a \"name\" element exists in ITEM, and add a \"subsonic-item\"
+element according to the ITEMs TYPE."
+  (let ((name (or (alist-get 'name item)
+                  (alist-get 'title item)
+                  (alist-get 'artist item)
+                  (alist-get 'album item))))
+    (setf (alist-get 'subsonic-type item) type)
+    (setf (alist-get 'name item) name))
+  item)
+
 ;;;; Auth helpers
 
 (defun infrasonic--get-credentials ()
@@ -233,11 +247,8 @@ This function returns artists completely flattened:
                                         'artists 'index)))
     ;; flatten the indexes -> list of artist-lists
     (mapcan (lambda (index)
-              (let ((artists (alist-get 'artist index)))
-                (mapcar (lambda (artist)
-                          (append '((subsonic-type . :artist))
-                                  artist))
-                        artists)))
+              (mapcar (lambda (artist) (infrasonic--standardise artist :artist))
+                      (alist-get 'artist index)))
             indexes)))
 
 (defun infrasonic-get-artist (artist-id)
@@ -249,13 +260,11 @@ The \"getArtists\" endpoint returns a list of albums."
   (let ((albums (infrasonic--get-items "getArtist"
                                        'artist 'album
                                        `(("id" . ,artist-id)))))
-    (mapcar (lambda (album)
-              (append '((subsonic-type . :album))
-                      album))
+    (mapcar (lambda (album) (infrasonic--standardise album :album))
             albums)))
 
 (defun infrasonic-get-album (album-id)
-  "Get a list of tracks for album with ALBUM-ID
+  "Get a list of tracks for album with ALBUM-ID.
 Returns a flat list of tracks in album with ALBUM-ID, with (subsonic-type
 . :track) and (name . <track name>) appended to each track.
 
@@ -264,10 +273,7 @@ contain a name element like albums and artists do, so we add it here."
   (let ((tracks (infrasonic--get-items "getAlbum"
                                        'album 'song
                                        `(("id" . ,album-id)))))
-    (mapcar (lambda (track)
-              (append `((subsonic-type . :track)
-                        (name . ,(alist-get 'title track)))
-                      track))
+    (mapcar (lambda (track) (infrasonic--standardise track :track))
             tracks)))
 
 ;;; Playlists
@@ -309,14 +315,17 @@ unstar ITEM-ID. CALLBACK is passed to `infrasonic-api-call' and is evaluated on 
 
 ;;; Scrobble
 
-(defun infrasonic-scrobble (track-id submission-p)
-  "Scrobble the track with TRACK-ID to the Subsonic API.
+(defun infrasonic-scrobble (track-id status)
+  "Scrobble STATUS for the track with TRACK-ID to the Subsonic API.
 Returns the parsed API response.
 
-When SUBMISSION-P is non-nil, server is notified that TRACK-ID is finished.
-When SUBMISSION-P is nil, server is notified that TRACK-ID is \"now playing\"."
-  (let* ((params `(("id" . ,track-id)
-                   ("submission" . ,(if submission-p "true" "false")))))
+STATUS may be either `:playing' or `:finished'."
+  (let* ((submission (pcase status
+                       (:playing "false")
+                       (:finished "true")
+                       (_ (error "Status invalid: %S. Must be either `:playing' or `:finished'" status))))
+         (params `(("id" . ,track-id)
+                   ("submission" . ,submission))))
     (infrasonic-api-call "scrobble" params #'ignore)))
 
 ;;; Random
@@ -355,18 +364,11 @@ have the `name' element added."
          (tracks (alist-get 'song result)))
     ;; This is pretty ugly
     (append
-     (mapcar (lambda (artist)
-               (cons (cons 'subsonic-type :artist)
-                     artist))
+     (mapcar (lambda (artist) (infrasonic--standardise artist :artist))
              artists)
-     (mapcar (lambda (album)
-               (cons (cons 'subsonic-type :album)
-                     album))
+     (mapcar (lambda (album) (infrasonic--standardise album :album))
              albums)
-     (mapcar (lambda (track)
-               (cons (cons 'subsonic-type :track)
-                     (cons (cons 'name (alist-get 'title track))
-                           track)))
+     (mapcar (lambda (track) (infrasonic--standardise track :track))
              tracks))))
 
 (defun infrasonic-search-tracks (query)
@@ -381,7 +383,7 @@ Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
 
 ;;; Bulk get tracks
 
-(defun infrasonic-get-all-tracks (item-id &optional level)
+(defun infrasonic-get-all-tracks (item-id level)
   "Fetch all tracks under item (artist or album) associated with ITEM-ID.
 Returns a list of parsed JSON tracks.
 
@@ -449,12 +451,43 @@ SIZE is the size of the cover art."
   "Download cover art at URL and write to FILE.
 Returns the path to the downloaded file.
 
-CALLBACK is called when the art is downloaded."
+CALLBACK is called when the art is downloaded. This may be used to
+display the image in FILE somewhere in Emacs once it's finished
+downloading."
   (plz 'get url
     :as `(file ,file)
     :then (or callback 'sync)
     :else (lambda (err)
             (error "Subsonic download failed: %s" err))))
+
+;;; High-level stuff
+
+(defun infrasonic-children (id level)
+  "Fetch \"nodes\" for directory hierarchy LEVEL and ID.
+Returns a list of alists, each alist representing children of ID.
+
+LEVEL determines the endpoint to use, and may be one of:
+- :artists: Returns top-level view of all artists using endpoint \"getArtists\".
+- :artist: Returns albums for an artist using \"getArtist\".
+- :album: Returns songs in an album using \"getAlbum\"."
+  (let ((items
+         (pcase level
+           (:artists (infrasonic-get-artists))
+           (:artist (infrasonic-get-artist id))
+           (:album (infrasonic-get-album id)))))
+    items))
+
+(defun infrasonic-child (level)
+  "Determines the hierarchical level under LEVEL.
+Returns the keyword symbol for the next level.
+
+Hierarchy is: :artists -> :artist -> :album."
+  (pcase level
+    (:artists :artist)
+    (:artist :album)
+    (:album :track)
+    (_ :track)))
+
 
 (provide 'infrasonic)
 
