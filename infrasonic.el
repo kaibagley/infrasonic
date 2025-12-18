@@ -24,7 +24,34 @@
 
 ;;; Commentary:
 
+
+;; Infrasonic is a small client library for the OpenSubsonic REST API that
+;; provides:
 ;;
+;; - Token/salt authentication using `auth-source'.
+;; - HTTP requests using `plz'.
+;; - JSON parsing.
+;; - Response standardisation: items are tagged with:
+;;   (subsonic-type . :artist/:album/:track), and
+;;   (name . "...")
+;;
+;; Configuration:
+;;
+;; Set `infrasonic-url', `infrasonic-protocol' and `infrasonic-user-agent'.
+;; Credentials in an `auth-source' backend (e.g. ~/.authinfo) with \"machine\"
+;; matching `infrasonic-url'.
+;;
+;; Data:
+;;
+;; `infrasonic' functions return parsed OpenSubsonic objects as alists, or
+;; lists of alists.
+;; Other than the above changes, OpenSubsonic responses are returned basically
+;; as-is.
+;;
+;; Errors:
+;;
+;; Functions signal `infrasonic-error' for local errors and
+;; `infrasonic-api-error' for API failures.
 
 ;;; Code:
 
