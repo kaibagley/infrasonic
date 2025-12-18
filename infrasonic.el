@@ -7,7 +7,7 @@
 ;; Keywords: multimedia
 ;; Package-Requires: ((emacs "30") (plz "0.9"))
 ;; Version: 0.1.1
-;; URL: https://github.com/alphapapa/listen.el
+;; URL: https://github.com/kaibagley/infrasonic
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -103,7 +103,7 @@ element according to the ITEMs TYPE."
 Returns an auth-source plist, or nil if not found.
 
 Searches `auth-source' files for an entry with \":host\" matching `infrasonic-url'."
-  (car (auth-source-search :host infrasonic-url)))
+  (car (auth-source-search :host infrasonic-url :require '(:user :secret) :max 1)))
 
 (defun infrasonic--get-auth-params ()
   "Return authentication info for Subsonic API calls.
@@ -114,7 +114,8 @@ Note that the token and salt are leaked locally in the player's process informat
       (let* ((creds (or (infrasonic--get-credentials)
                         (error "No auth-source entry found for host %S" infrasonic-url)))
              (user (plist-get creds :user))
-             (pass (funcall (plist-get creds :secret)))
+             (secret (plist-get creds :secret))
+             (pass (if (functionp secret) (funcall secret) secret))
              (salt (format "%06x" (random #xffffff)))
              (token (secure-hash 'md5 (concat pass salt))))
         `(("u" . ,user)
@@ -196,7 +197,11 @@ Returns a complete URL for MPV or VLC to directly stream from the server."
    (append (infrasonic--get-auth-params)
            `(("id" . ,track-id)))))
 
-;;;; Requests
+;;;;; Endpoints
+
+;;;; System
+
+;;; ping
 
 (defun infrasonic-ping-server ()
   "Ping the server to check connectivity and authentication.
@@ -208,6 +213,13 @@ Returns nil, only displaying a success or failure message."
         (message "Successfully pinged OpenSubsonic server!"))
     (error
      (message "Failed to ping server: %s" (error-message-string err)))))
+
+;;; getLicense
+
+(defun infrasonic-get-license ()
+  "Get the license status from the OpenSubsonic server.
+Returns the parsed license response."
+  (alist-get 'license (infrasonic-api-call "getLicense")))
 
 (defun infrasonic--get-items (endpoint rootkey itemkey &optional params)
   "Get data from ENDPOINT, and extract content using ROOTKEY and ITEMKEY.
@@ -222,13 +234,13 @@ PARAMS are optional API parameters."
               (items (map-nested-elt response (list rootkey itemkey))))
     items))
 
-;;;; ID3 Getters
-;; These functions get artists, albums and tracks using the ID3 endpoints
-;; They also add:
-;; - subsonic-type element (:artist, :album, :track),
-;; - name element (tracks use title instead of name, so ensure everything has a name
+;;;; Browsing
+;; Not including: getMusicFolders, getIndexes, getMusicDirectory, getVideos,
+;; getVideoInfo, getArtistInfo, getAlbumInfo, getSimilarSongs
 
-;;; Artists
+;;; getGenres
+
+;;; getArtists
 
 (defun infrasonic-get-artists ()
   "Get a list of artists.
@@ -251,22 +263,7 @@ This function returns artists completely flattened:
                       (alist-get 'artist index)))
             indexes)))
 
-;;; Albums
-
-(defun infrasonic-get-album-list (type)
-  "Return an album list.
-Returns a list of albums. Number returned is dictated by
-`infrasonic-search-max-results'.
-
-TYPE may be:
-- `:random': Random albums.
-- `:newest': Newest albums by release date.
-- `:frequent': User's most frequently played albums.
-- `:recent': Recently added albums.
-- `:starred': Starred albums.
-- `:byname': Alphabetically sorted by name.
-- `:byartist': Alphabetically sorted by artist. "
-  )
+;;; getArtist
 
 (defun infrasonic-get-artist (artist-id)
   "Get a list of albums for artist with ARTIST-ID.
@@ -280,7 +277,7 @@ The \"getArtists\" endpoint returns a list of albums."
     (mapcar (lambda (album) (infrasonic--standardise album :album))
             albums)))
 
-;;; Tracks under album
+;;; getAlbum
 
 (defun infrasonic-get-album (album-id)
   "Get a list of tracks for album with ALBUM-ID.
@@ -292,6 +289,126 @@ contain a name element like albums and artists do, so we add it here."
   (let ((tracks (infrasonic--get-items "getAlbum"
                                        'album 'song
                                        `(("id" . ,album-id)))))
+    (mapcar (lambda (track) (infrasonic--standardise track :track))
+            tracks)))
+
+;;; getSong
+
+(defun infrasonic-get-song (track-id)
+  "Get information for a track with TRACK-ID.
+Returns the parsed list of track attributes."
+  (let ((track (infrasonic-api-call "getSong" `(("id" . ,track-id)))))
+    (infrasonic--standardise (alist-get 'song track) :track)))
+
+;;; getArtistInfo2
+
+(defun infrasonic-get-artist-info (artist-id)
+  "Get information about the artist with ARTIST-ID.
+Returns the parsed list of artist attributes."
+  (let ((artist-info (infrasonic-api-call "getArtistInfo2"
+                                          `(("id" . ,artist-id)))))
+    (alist-get 'artistInfo2 artist-info)))
+
+;;; getAlbumInfo2
+
+(defun infrasonic-get-album-info (album-id)
+  "Get information about the album with ALBUM-ID.
+Returns the parsed list of album attributes."
+  (let ((album-info (infrasonic-api-call "getAlbumInfo2"
+                                         `(("id" . ,album-id)))))
+    ;; For some reason getAlbumInfo2 has nested albumInfo element (no 2)
+    (alist-get 'albumInfo album-info)))
+
+;;; getSimilarSongs2
+
+(defun infrasonic-get-similar-songs (artist-id &optional n)
+  "Get N random songs from ARTIST-ID and from similar artists.
+Returns a list of songs."
+  (let* ((n-tracks (or n infrasonic-search-max-results))
+         (tracks (infrasonic--get-items "getSimilarSongs2"
+                                        'similarSongs2 'song
+                                        `(("id" . ,artist-id)
+                                          ("count" . ,n-tracks)))))
+    (mapcar (lambda (track) (infrasonic--standardise track :track))
+            tracks)))
+
+;;; getTopSongs
+
+(defun infrasonic-get-top-songs (artist-id &optional n)
+  "Get ARTIST-ID's N top songs.
+Returns a list of songs."
+  (let* ((n-tracks (or n infrasonic-search-max-results))
+         (tracks (infrasonic--get-items "getTopSongs"
+                                        'topSongs 'song
+                                        `(("id" . ,artist-id)
+                                          ("count" . ,n-tracks)))))
+    (mapcar (lambda (track) (infrasonic--standardise track :track))
+            tracks)))
+
+;;;; Album/song lists
+;; Not including: getAlbumList, getStarred
+
+;;; getAlbumList2
+
+(defun infrasonic-get-album-list (type &optional n)
+  "Return a list of N albums according to TYPE.
+Returns a list of albums. Number returned is dictated by either N, or
+`infrasonic-search-max-results' by default.
+
+TYPE may be:
+- A genre string, for example: \"Rock\".
+- `:random': Random albums.
+- `:newest': Newest albums by release date.
+- `:frequent': User's most frequently played albums.
+- `:recent': Recently added albums.
+- `:starred': Starred albums.
+- `:byname': Alphabetically sorted by name.
+- `:byartist': Alphabetically sorted by artist."
+  (let* ((n-albums (or n infrasonic-search-max-results))
+         (list-type (pcase type
+                      (:random "random")
+                      (:newest "newest")
+                      (:frequent "frequent")
+                      (:recent "recent")
+                      (:starred "starred")
+                      (:byname "alphabeticalByName")
+                      (:byartist "alphabeticalByArtist")
+                      (_ "byGenre")))
+         (params (append
+                  `(("type" . ,list-type)
+                    ("size" . ,n-albums)
+                    (when (stringp type)
+                      ("genre" . ,type)))))
+         (albums (infrasonic--get-items "getAlbumList2"
+                                        'albumList2 'album
+                                        params)))
+    (mapcar (lambda (album) (infrasonic--standardise album :album))
+            albums)))
+
+;;; getRandomSongs
+
+(defun infrasonic-get-random-songs (&optional n)
+  "Fetch N random tracks from the server.
+Returns a N length list of parsed JSON tracks.
+
+Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
+  (let ((n-tracks (or n infrasonic-search-max-results))
+        (tracks (infrasonic--get-items "getRandomSongs"
+                                       'randomSongs 'song
+                                       `(("size" . ,n-tracks)))))
+    (mapcar (lambda (track) (infrasonic--standardise track :track))
+            tracks)))
+
+;;; getSongsByGenre
+
+(defun infrasonic-get-songs-by-genre (genre &optional n)
+  "Get N songs in GENRE.
+Returns a list of songs."
+  (let ((n-tracks (or n infrasonic-search-max-results))
+        (tracks (infrasonic--get-items "getSongsByGenre"
+                                       'songsByGenre 'song
+                                       `(("genre" . ,genre)
+                                         ("count" . ,n-tracks)))))
     (mapcar (lambda (track) (infrasonic--standardise track :track))
             tracks)))
 
@@ -326,6 +443,10 @@ Returns a list of parsed JSON tracks."
     (mapcar (lambda (track) (infrasonic--standardise track :track))
             tracks)))
 
+;;;; Setters
+
+;;; Star
+
 (defun infrasonic-star (item-id star-p &optional callback)
   "Set ITEM-ID's (artist, album or track) star status according to STAR-P.
 Returns the parsed API response.
@@ -350,19 +471,6 @@ STATUS may be either `:playing' or `:finished'."
          (params `(("id" . ,track-id)
                    ("submission" . ,submission))))
     (infrasonic-api-call "scrobble" params #'ignore)))
-
-;;; Random
-
-(defun infrasonic-get-random-tracks (n)
-  "Fetch N random tracks from the server.
-Returns a N length list of parsed JSON tracks.
-
-Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
-  (let ((tracks (infrasonic--get-items "getRandomSongs"
-                                       'randomSongs 'song
-                                       `(("size" . ,(number-to-string n))))))
-    (mapcar (lambda (track) (infrasonic--standardise track :track))
-            tracks)))
 
 ;;; Search
 
@@ -489,6 +597,8 @@ downloading."
             (error "Subsonic download failed: %s" err))))
 
 ;;; High-level stuff
+
+
 
 (defun infrasonic-children (id level)
   "Fetch \"nodes\" for directory hierarchy LEVEL and ID.
