@@ -1,39 +1,47 @@
 # Infrasonic
 
-infrasonic.el is an Emacs library for interacting with OpenSubsonic-compatible
+- [Installation](#installation)
+- [Usage](#usage)
+- [Functions](#functions)
+- [API Implementation Status](#api implementation status)
+
+`infrasonic` is an Emacs library for interacting with OpenSubsonic-compatible
 music servers such as Gonic, Navidrome, etc.
 
 It handles authentication, request signing, and JSON parsing. Authentication is
-handled with auth-source using the OpenSubsonic token/salt authentication
-method.
+handled with `auth-source` using the OpenSubsonic token/salt authentication method.
 
 `infrasonic` also ensures consistency between tracks, albums and artists by
-adding a "name" element to tracks. A "subsonic-type" element is added to, which
-indicates if the item is a track, album or artist.
+adding a "name" element to tracks. A "subsonic-type" element is added too,
+which indicates if the item is a track, album or artist. Other than this, the
+API request is untouched (other than the JSON -> list parsing).
 
 ## Requirements
-- Emacs 30.1 or higher.
-- `plz.el` (0.9 or higher) for HTTP requests.
+- Emacs 30.1 or higher for built-in JSON support.
+- `plz` (0.9 or higher) for HTTP requests.
 - An OpenSubsonic-compatible server.
 
 ## Installation
-Clone the repository and add it to your load-path:
+Hopefully at some point, this package will be available on a package
+repository. For now:
 
+Manual:
+Clone the repository and add it to your load-path:
 ```emacs-lisp
-(add-to-list 'load-path "/path/to/infrasonic.el")
+(add-to-list 'load-path "/path/to/infrasonic_repo")
 (require 'infrasonic)
 ```
 
-`straight.el`:
+`straight`:
 ```emacs-lisp
 (straight-use-package
- '(infrasonic :type git :host github :repo "username/infrasonic.el"))
+ '(infrasonic :type git :host github :repo "kaibagley/infrasonic"))
 ```
 
 `elpaca`
 ```emacs-lisp
 (use-package infrasonic
-  :ensure '(infrasonic :repo "~/repos/infrasonic/")
+  :ensure '(infrasonic :repo "kaibagley/infrasonic")
   ...)
 ```
 
@@ -58,9 +66,10 @@ machine music.example.com login my_username password my_secret_password
 
 3. Low-level Functions
 
-Test connection using `M-x infrasonic-ping-server`
+Test connection using `M-x infrasonic-ping-server`.
 
-`infrasonic` is designed to be used as a backend for other multimedia packages (like listen.el).
+`infrasonic` is designed to be used as a backend for other multimedia packages
+(like listen.el).
 
 Some examples:
 
@@ -95,7 +104,94 @@ Some examples:
 (infrasonic-get-all-tracks "123" :artist)
 ```
 
+## Functions:
+
+<details><summary><b>(album), (artist), (track), etc. refer to the full parsed list construct.</b></summary>
+
+``` emacs-lisp
+;; This is the parsed JSON returned from `infrasonic-search' to a gonic server.
+(((subsonic-type . :artist)
+  (id . "ar-461")
+  (name . "The Human Abstract")
+  (albumCount . 5))
+ ((subsonic-type . :album)
+  (id . "al-6872")
+  (created . "2024-03-14T19:47:03.288353577+08:00")
+  (artistId . "ar-479")
+  (artist . "Tigercub")
+  (artists ((id . "ar-479") (name . "Tigercub")))
+  (displayArtist . "Tigercub")
+  (title . "Abstract Figures in the Dark")
+  (album . "Abstract Figures in the Dark")
+  (coverArt . "al-6872")
+  (name . "Abstract Figures in the Dark")
+  (songCount . 0)
+  (duration . 0)
+  (playCount . 0)
+  (genre . "Rock")
+  (genres ((name . "Rock")))
+  (year . 2016)
+  (isCompilation)
+  (releaseTypes "Album"))
+ ((subsonic-type . :track)
+  (name . "The Abstract of a Planet in Resolve (instrumental)")
+  (id . "tr-7252")
+  (album . "To Speak, To Listen")
+  (albumId . "al-2004")
+  (artist . "Eidola")
+  (artistId . "ar-127")
+  (artists ((id . "ar-127") (name . "Eidola")))
+  (displayArtist . "Eidola")
+  (albumArtists ((id . "ar-127") (name . "Eidola")))
+  (displayAlbumArtist . "Eidola")
+  (bitRate . 320)
+  (contentType . "audio/mpeg")
+  (coverArt . "al-2004")
+  (created . "2025-12-09T20:59:09.034293055+08:00")
+  (duration . 159)
+  (genre . "Experimental;Experimental Rock;Post-Hardcore;Progressive Metal")
+  (genres ((name . "Experimental;Experimental Rock;Post-Hardcore;Progressive Metal")))
+  (isDir)
+  (isVideo)
+  (parent . "al-2004")
+  (path . "Eidola/Eidola - Album - 2017 - To Speak To Listen/0101 - The Abstract of a Planet in Resolve instrumental.mp3")
+  (size . 6371345)
+  (suffix . "mp3")
+  (title . "The Abstract of a Planet in Resolve (instrumental)")
+  (track . 1)
+  (discNumber . 1)
+  (type . "music")
+  (year . 2017)
+  (musicBrainzId . "9b2c86c9-e2f5-476a-ba9b-7c65282fc954")
+  (replayGain)))
+```
+
+</details>
+
+| Function name                    | API endpoint                        | Returns                                                   |
+|----------------------------------|-------------------------------------|-----------------------------------------------------------|
+| `infrasonic-get-stream-url`      | `stream`                            | Complete URL string for streaming                         |
+| `infrasonic-ping-server`         | `ping`                              | `nil` (Displays success/failure message)                  |
+| `infrasonic-get-artists`         | `getArtists`                        | Flat list of artists: `((artist1) (artist2) ...)`         |
+| `infrasonic-get-artist`          | `getArtist`                         | Flat list of albums: `((album1) (album2) ...)`            |
+| `infrasonic-get-album`           | `getAlbum`                          | Flat list of tracks: `((track1) (track2) ...)`            |
+| `infrasonic-get-playlists`       | `getPlaylists`                      | Alist of names/IDs: `((name . id) ...)`                   |
+| `infrasonic-get-playlist-tracks` | `getPlaylist`                       | List of tracks: `((track1) (track2) ...)`                 |
+| `infrasonic-get-starred-tracks`  | `getStarred2`                       | List of tracks: `((track1) (track2) ...)`                 |
+| `infrasonic-star`                | `star` / `unstar`                   | `nil` (Displays success/failure message)                  |
+| `infrasonic-scrobble`            | `scrobble`                          | `nil`                                                     |
+| `infrasonic-get-random-tracks`   | `getRandomSongs`                    | List of n tracks: `((track1) ...)`                        |
+| `infrasonic-search`              | `search3`                           | Flat list of results: `((artist1) (album1) (track1) ...)` |
+| `infrasonic-search-tracks`       | `search3`                           | List of tracks: `((track1) (track2) ...)`                 |
+| `infrasonic-get-all-tracks`      | `getArtist` / `getAlbum`            | List of tracks: `((track1) (track2) ...)`                 |
+| `infrasonic-create-playlist`     | `createPlaylist`                    | "Playlist object: `((id . ""1"") (name . ""foo"") ...)`"  |
+| `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                       |
+| `infrasonic-get-art-url`         | Builds `getCoverArt`                | Complete URL string for image resource                    |
+| `infrasonic-get-art`             | Requests `getCoverArt`              | File path to downloaded image                             |
+| `infrasonic-children`            | `getArtists`/`getArtist`/`getAlbum` | List of items (artists, albums, or tracks)                |
+
 ## API Implementation Status
+<details><summary><b>Click to expand the API implementation checklist</b></summary>
 ### 1.0.0
 - [ ] download
 - [x] getCoverArt
@@ -188,3 +284,4 @@ Some examples:
 - [ ] createInternetRadioStation
 - [ ] deleteInternetRadioStation
 - [ ] updateInternetRadioStation
+</details>
