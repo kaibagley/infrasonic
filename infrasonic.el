@@ -35,7 +35,6 @@
 
 (require 'plz)          ; HTTP requests
 (require 'auth-source)  ; authinfo
-(require 'json)         ; for Emacs < 30 (do i need this?)
 (require 'subr-x)       ; for when-let
 (require 'gv)           ; for setf
 
@@ -50,46 +49,36 @@
   "Options for `infrasonic'."
   :group 'multimedia)
 
-(defcustom infrasonic-url ""
+(defvar infrasonic-url ""
   "The fully-qualified domain name of your OpenSubsonic-compatible server.
 For example, \"music.example.com\" or \"192.168.0.0:4533\".
-Don't include the protocol/scheme or the resource path."
-  :type 'string
-  :group 'infrasonic)
+Don't include the protocol/scheme or the resource path.")
 
-(defcustom infrasonic-protocol "https"
+(defvar infrasonic-protocol "https"
   "Protocol to use for calls to Subsonic API.
-Must be either \"http\" or \"https\" (default)."
-  :type '(choice (const :tag "HTTPS" "https")
-                 (const :tag "HTTP" "http"))
-  :group 'infrasonic)
+Must be either \"http\" or \"https\" (default).")
 
-(defcustom infrasonic-search-max-results 200
-  "Maximum results to return in search queries."
-  :type 'integer
-  :group 'infrasonic)
+(defvar infrasonic-search-max-results 200
+  "Maximum results to return in search queries.")
 
-(defcustom infrasonic-user-agent "infrasonic"
+(defvar infrasonic-user-agent "infrasonic"
   "User-agent used in API requests.
-Used by the server to identify the player."
-  :type 'string
-  :group 'infrasonic)
+Used by the server to identify the player.")
 
-(defcustom infrasonic--art-size 64
-  "Size of the square cover art images."
-  :type 'integer
-  :group 'infrasonic)
-
-(defcustom infrasonic--opensubsonic-version "1.16.1"
-  "OpenSubsonic API version of the server."
-  :type 'string
-  :group 'infrasonic)
+(defvar infrasonic-art-size 64
+  "Size of the square cover art images.")
 
 (defvar infrasonic--auth-params nil
   "The authentication URL parameters.
 This should not be set globally.
 For batch operations, this is let-bound.
 For other operations, generate on the fly using `infrasonic--get-auth-params'.")
+
+(defconst infrasonic-opensubsonic-version "1.16.1"
+  "OpenSubsonic API version of the server.")
+
+(define-error 'infrasonic-error "Infrasonic error")
+(define-error 'infrasonic-api-error "Infrasonic API error" 'infrasonic-error)
 
 ;;;; General helpers
 
@@ -169,7 +158,9 @@ Return an alist of strings: ((\"u\" . \"myusername\") (\"t\" . \"<randomstring>\
 Note that the token and salt are leaked locally in the player's process information."
   (or infrasonic--auth-params
       (let* ((creds (or (infrasonic--get-credentials)
-                        (error "No auth-source entry found for host %S" infrasonic-url)))
+                        (signal 'infrasonic-error
+                                (list "No auth-source entry found for host"
+                                      infrasonic-url))))
              (user (plist-get creds :user))
              (secret (plist-get creds :secret))
              (pass (if (functionp secret) (funcall secret) secret))
@@ -178,7 +169,7 @@ Note that the token and salt are leaked locally in the player's process informat
         `(("u" . ,user)
           ("t" . ,token)
           ("s" . ,salt)
-          ("v" . ,infrasonic--opensubsonic-version)
+          ("v" . ,infrasonic-opensubsonic-version)
           ("c" . ,infrasonic-user-agent)
           ("f" . "json")))))
 
@@ -193,11 +184,12 @@ PARAMS is an alist of query parameters."
                                (list (car p) (cdr p)))
                              params))
          (param-str (url-build-query-string param-list nil t)))
-    (format "%s://%s/rest/%s.view?%s"
-            infrasonic-protocol
-            infrasonic-url
-            endpoint
-            param-str)))
+    (concat
+     (format "%s://%s/rest/%s.view"
+             infrasonic-protocol
+             infrasonic-url
+             endpoint)
+     (when param-str (format "?%s" param-str)))))
 
 ;;;; API Helpers
 
@@ -208,16 +200,20 @@ Returns data contained in `subsonic-response' alist, or signals an error.
 Should be called from a buffer containing an API response."
   (goto-char (point-min))
   (when (zerop (buffer-size))
-    (error "API response is empty"))
-  (let* ((json-data (json-parse-buffer :object-type 'alist
-                                       :null-object nil
-                                       :false-object nil
-                                       :array-type 'list))
-         (response (alist-get 'subsonic-response json-data)))
-    (unless (string-equal "ok" (alist-get 'status response))
-      (error "API response returned error: %s"
-             (alist-get 'message (alist-get 'error response))))
-    response))
+    (signal 'infrasonic-api-error (list "API response is empty")))
+  (condition-case err
+      (let* ((json-data (json-parse-buffer :object-type 'alist
+                                           :null-object nil
+                                           :false-object nil
+                                           :array-type 'list))
+             (response (alist-get 'subsonic-response json-data)))
+        (unless (string-equal "ok" (alist-get 'status response))
+          (signal 'infrasonic-api-error (list "API response returned error"
+                                              (alist-get 'message (alist-get 'error response)))))
+        response)
+    (json-parse-error
+     (signal 'infrasonic-error (list "Error parsing JSON response"
+                                     (error-message-string err))))))
 
 (defun infrasonic-api-call (endpoint &optional params callback body)
   "Make a call to the OpenSubsonic API.
@@ -233,7 +229,7 @@ parsed JSON.
 
 The JSON should usually be processed by `infrasonic--process-api-response'."
   (when (equal infrasonic-url "")
-    (error "Please set `infrasonic-url'"))
+    (signal 'infrasonic-error (list "Please set `infrasonic-url'")))
   (let* ((api-params (append (infrasonic--get-auth-params) params))
          (http-method (if body 'post 'get))
          (api-url (infrasonic--build-url endpoint api-params))
@@ -244,7 +240,11 @@ The JSON should usually be processed by `infrasonic--process-api-response'."
       :body body
       :as #'infrasonic--process-api-response
       :then (or callback 'sync)
-      :else (lambda (err) (error "Subsonic API request error: %s" err)))))
+      :else (lambda (err)
+              (if callback
+                  (message "Subsonic API request error: %s" err)
+                (signal 'infrasonic-api-error (list "Subsonic API request error"
+                                                    err)))))))
 
 (defun infrasonic-get-stream-url (track-id)
   "Create a streaming URL for track with TRACK-ID.
@@ -268,8 +268,9 @@ Returns nil, only displaying a success or failure message."
       (progn
         (infrasonic-api-call "ping")
         (message "Successfully pinged OpenSubsonic server!"))
-    (error
-     (message "Failed to ping server: %s" (error-message-string err)))))
+    (signal 'infrasonic-error
+            (list "Failed to ping server"
+                  (error-message-string err)))))
 
 ;;; getLicense
 
@@ -503,7 +504,8 @@ STATUS may be either `:playing' or `:finished'."
   (let* ((submission (pcase status
                        (:playing "false")
                        (:finished "true")
-                       (_ (error "Status invalid: %S. Must be either `:playing' or `:finished'" status))))
+                       (_ (signal 'infrasonic-error "Status invalid. Must be either `:playing' or `:finished'"
+                                  status))))
          (params `(("id" . ,track-id)
                    ("submission" . ,submission))))
     (infrasonic-api-call "scrobble" params #'ignore)))
@@ -590,7 +592,7 @@ This function uses a POST request since large playlists can return HTTP error 41
           (message "Playlist '%s' was created with '%d' tracks."
                    name (length track-ids))
           playlist)
-      (error "Playlist was not created."))))
+      (signal 'infrasonic-error (list "Playlist was not created.")))))
 
 (defun infrasonic-delete-playlist (playlist-id)
   "Delete a Subsonic playlist with PLAYLIST-ID."
@@ -604,7 +606,7 @@ This function uses a POST request since large playlists can return HTTP error 41
   "Return the art URL for ITEM-ID.
 
 SIZE is the size of the cover art."
-  (let ((art-size (or size infrasonic--art-size)))
+  (let ((art-size (or size infrasonic-art-size)))
     (infrasonic--build-url "getCoverArt"
                            (append (infrasonic--get-auth-params)
                                    `(("id" . ,item-id)
@@ -621,7 +623,8 @@ downloading."
     :as `(file ,file)
     :then (or callback 'sync)
     :else (lambda (err)
-            (error "Subsonic download failed: %s" err))))
+            (signal 'infrasonic-error (list "Subsonic download failed"
+                                            err)))))
 
 ;;; High-level stuff
 
