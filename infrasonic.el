@@ -72,10 +72,6 @@
 
 ;;;; Customisation
 
-(defgroup infrasonic nil
-  "Options for `infrasonic'."
-  :group 'multimedia)
-
 (defvar infrasonic-url ""
   "The fully-qualified domain name of your OpenSubsonic-compatible server.
 For example, \"music.example.com\" or \"192.168.0.0:4533\".
@@ -216,7 +212,8 @@ PARAMS is an alist of query parameters."
              infrasonic-protocol
              infrasonic-url
              endpoint)
-     (when param-str (format "?%s" param-str)))))
+     (when (and param-str (not (string-empty-p param-str)))
+       (format "?%s" param-str)))))
 
 ;;;; API Helpers
 
@@ -233,10 +230,15 @@ Should be called from a buffer containing an API response."
                                            :null-object nil
                                            :false-object nil
                                            :array-type 'list))
-             (response (alist-get 'subsonic-response json-data)))
-        (unless (string-equal "ok" (alist-get 'status response))
-          (signal 'infrasonic-api-error (list "API response returned error"
-                                              (alist-get 'message (alist-get 'error response)))))
+             (response (alist-get 'subsonic-response json-data))
+             (status (alist-get 'status response)))
+        (unless response
+          (signal 'infrasonic-api-error (list "Bad or missing response data" json-data)))
+        (unless (and (stringp status) (string-equal "ok" status))
+          (let* ((err (alist-get 'error response))
+                 (msg (alist-get 'message err))
+                 (cod (alist-get 'code err)))
+            (signal 'infrasonic-api-error (list msg code err))))
         response)
     (json-parse-error
      (signal 'infrasonic-error (list "Error parsing JSON response"
@@ -295,9 +297,8 @@ Returns nil, only displaying a success or failure message."
       (progn
         (infrasonic-api-call "ping")
         (message "Successfully pinged OpenSubsonic server!"))
-    (signal 'infrasonic-error
-            (list "Failed to ping server"
-                  (error-message-string err)))))
+    (infrasonic-error
+     (message "Failed to ping server: %s" (error-message-string err)))))
 
 ;;; getLicense
 
@@ -331,7 +332,8 @@ This function returns artists completely flattened:
   (let ((indexes (infrasonic--get-many "getArtists" '(artists index))))
     ;; flatten the indexes -> list of artist-lists
     (mapcan (lambda (index)
-              (infrasonic--standardise-list (alist-get 'artist index) :artist))
+              (let ((artists (infrasonic--ensure-alist-list (alist-get 'artist index))))
+                (infrasonic--standardise-list artists :artist)))
             indexes)))
 
 ;;; getArtist
@@ -531,8 +533,8 @@ STATUS may be either `:playing' or `:finished'."
   (let* ((submission (pcase status
                        (:playing "false")
                        (:finished "true")
-                       (_ (signal 'infrasonic-error "Status invalid. Must be either `:playing' or `:finished'"
-                                  status))))
+                       (_ (signal 'infrasonic-error (list "Status invalid. Must be either `:playing' or `:finished'"
+                                                          status)))))
          (params `(("id" . ,track-id)
                    ("submission" . ,submission))))
     (infrasonic-api-call "scrobble" params #'ignore)))
@@ -650,8 +652,8 @@ downloading."
     :as `(file ,file)
     :then (or callback 'sync)
     :else (lambda (err)
-            (signal 'infrasonic-error (list "Subsonic download failed"
-                                            err)))))
+            (signal 'infrasonic-api-error (list "Subsonic download failed"
+                                                err)))))
 
 ;;; High-level stuff
 
