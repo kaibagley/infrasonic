@@ -142,6 +142,7 @@ Returns a list of standardised ITEMs."
   "Get data from ENDPOINT that returns one item, and extract contents in KEY.
 Returns an alist.
 
+PARAMS are optional API parameters.
 TYPE is the type of data (artist, album, track)."
   (when-let* ((response (infrasonic-api-call endpoint params))
               (item (alist-get key response)))
@@ -155,7 +156,8 @@ Returns a list of alists.
 
 KEYS is a list of the outer and inner keys of the OpenSubsonic API
 response (for example, \"searchResult3\" and \"song\"). PARAMS are
-optional API parameters."
+optional API parameters. TYPE is the type of the items being retrieved
+\(:artist, :album, etc.)"
   (when-let* ((response (infrasonic-api-call endpoint params))
               (items (map-nested-elt response keys))
               (items-alist (infrasonic--ensure-alist-list items)))
@@ -169,16 +171,19 @@ optional API parameters."
   "Fetch user credentials securely using `auth-source'.
 Returns an auth-source plist, or nil if not found.
 
-Searches `auth-source' files for an entry with \":host\" matching `infrasonic-url'."
+Searches `auth-source' files for an entry with \":host\" matching
+`infrasonic-url'."
   (car (auth-source-search :host infrasonic-url
                            :require '(:user :secret)
                            :max 1)))
 
 (defun infrasonic--get-auth-params ()
   "Return authentication info for Subsonic API calls.
-Return an alist of strings: ((\"u\" . \"myusername\") (\"t\" . \"<randomstring>\") ...).
+Return an alist of strings:
+\((\"u\" . \"myusername\") (\"t\" . \"<randomstring>\") ...).
 
-Note that the token and salt are leaked locally in the player's process information."
+Note that the token and salt are leaked locally in the player's process
+information."
   (or infrasonic--auth-params
       (let* ((creds (or (infrasonic--get-credentials)
                         (signal 'infrasonic-error
@@ -200,8 +205,8 @@ Note that the token and salt are leaked locally in the player's process informat
   "Build an OpenSubsonic REST API URL from ENDPOINT and PARAMS.
 Returns a complete URL required to make an API call.
 
-ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp' for
-details.
+ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp'
+for details.
 PARAMS is an alist of query parameters."
   (let* ((param-list (mapcar (lambda (p)
                                (list (car p) (cdr p)))
@@ -238,7 +243,7 @@ Should be called from a buffer containing an API response."
           (let* ((err (alist-get 'error response))
                  (msg (alist-get 'message err))
                  (cod (alist-get 'code err)))
-            (signal 'infrasonic-api-error (list msg code err))))
+            (signal 'infrasonic-api-error (list msg cod err))))
         response)
     (json-parse-error
      (signal 'infrasonic-error (list "Error parsing JSON response"
@@ -249,12 +254,12 @@ Should be called from a buffer containing an API response."
 Returns the parsed JSON if CALLBACK is nil.
 Returns the curl process object if CALLBACK is non-nil.
 
-ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp' for
-details.
+ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp'
+for details.
 PARAMS is an alist of additional parameters.
 If CALLBACK is nil, run synchronously and parse the JSON response.
-If CALLBACK is non-nil, run asynchronously and parse the JSON response, then call CALLBACK on the
-parsed JSON.
+If CALLBACK is non-nil, run asynchronously and parse the JSON response, then
+call CALLBACK on the parsed JSON.
 
 The JSON should usually be processed by `infrasonic--process-api-response'."
   (when (equal infrasonic-url "")
@@ -322,12 +327,12 @@ to each artist.
 
 The \"getArtists\" endpoint returns a list of lists, each sublist being
 artists under the alphabetical index:
-(((name . \"#\") (artist . (<list of artists>)))
+\(((name . \"#\") (artist . (<list of artists>)))
  ((name . \"a\") (artist . (<list of artists>)))
  ((name . \"b\") (artist . (<list of artists>)))
  ...)
 This function returns artists completely flattened:
-((<artist>) (<artist>) ...)"
+\((<artist>) (<artist>) ...)"
   ;; Dont tag with :artist yet, since these are indices
   (let ((indexes (infrasonic--get-many "getArtists" '(artists index))))
     ;; flatten the indexes -> list of artist-lists
@@ -517,8 +522,10 @@ Returns a list of parsed JSON tracks."
   "Set ITEM-ID's (artist, album or track) star status according to STAR-P.
 Returns the parsed API response.
 
-Send a request to the \"star\" or \"unstar\" Subsonic endpoints, star (when STAR-P is non-nil) or
-unstar ITEM-ID. CALLBACK is passed to `infrasonic-api-call' and is evaluated on the response data."
+Send a request to the \"star\" or \"unstar\" Subsonic endpoints, star (when
+STAR-P is non-nil) or unstar ITEM-ID.
+CALLBACK is passed to `infrasonic-api-call' and is evaluated on the response
+data."
   (infrasonic-api-call (if star-p "star" "unstar")
                         `(("id" . ,item-id))
                         callback))
@@ -542,10 +549,9 @@ STATUS may be either `:playing' or `:finished'."
 ;;; Search
 
 (defun infrasonic-search (query)
-  "Search server for QUERY at \"search3\" endpoint for artists, albums and
-tracks.
+  "Search for QUERY at \"search3\" endpoint for artists, albums and tracks.
 Returns a flat list of items:
-(((subsonic-type . :artist) (name . ...) ...)
+\(((subsonic-type . :artist) (name . ...) ...)
  ((subsonic-type . :album) (name . ...) ...)
  ((subsonic-type . :track) (name . ...) ...)
  ((subsonic-type . :track) (name . ...) ...))
@@ -568,7 +574,7 @@ have the `name' element added."
      (infrasonic--standardise-list tracks :track))))
 
 (defun infrasonic-search-tracks (query n)
-  "Search the server for tracks matching QUERY.
+  "Search the server for N tracks matching QUERY.
 Returns a list of parsed JSON tracks.
 
 Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
@@ -606,7 +612,8 @@ Returns the newly created playlist.
 TRACK-IDS should be a list of strings.
 NAME should be a string.
 
-This function uses a POST request since large playlists can return HTTP error 414."
+This function uses a POST request since large playlists can return HTTP error
+414."
   ;; we have to pass one songId per track
   (let* ((body-list (cons `("name" ,name)
                           (mapcar (lambda (id)
