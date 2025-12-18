@@ -36,9 +36,10 @@
 (require 'plz)          ; HTTP requests
 (require 'auth-source)  ; authinfo
 (require 'json)         ; for Emacs < 30 (do i need this?)
+(require 'subr-x)       ; for when-let
+(require 'gv)           ; for setf
 
 (require 'map)          ; for map-nested-elt
-(require 'cl-lib)       ; for cl-incf/decf
 (require 'url-util)     ; for url-build-query-string
 
 ;; Declares
@@ -74,6 +75,16 @@ Used by the server to identify the player."
   :type 'string
   :group 'infrasonic)
 
+(defcustom infrasonic--art-size 64
+  "Size of the square cover art images."
+  :type 'integer
+  :group 'infrasonic)
+
+(defcustom infrasonic--opensubsonic-version "1.16.1"
+  "OpenSubsonic API version of the server."
+  :type 'string
+  :group 'infrasonic)
+
 (defvar infrasonic--auth-params nil
   "The authentication URL parameters.
 This should not be set globally.
@@ -96,6 +107,50 @@ element according to the ITEMs TYPE."
     (setf (alist-get 'name item) name))
   item)
 
+(defun infrasonic--standardise-list (items type)
+  "Standardise all ITEMS as TYPE.
+Returns a list of standardised ITEMs."
+  (mapcar (lambda (item) (infrasonic--standardise item type))
+          items))
+
+(defun infrasonic--alist-p (l)
+  "Returns t if L is an alist."
+  (and (listp l)                ; its a list
+       (consp l)                ; its a cons
+       (consp (car l))          ; its an alist
+       (not (consp (caar l))))) ; its not a list of alists
+
+(defun infrasonic--ensure-alist-list (l)
+  "Return L as a list of alists."
+  (cond ((null l) nil)                 ; l empty, return nil
+        ((infrasonic--alist-p l) (list l)) ; l single cons, wrap list
+        (t l)))
+
+(defun infrasonic--get-one (endpoint key &optional params type)
+  "Get data from ENDPOINT that returns one item, and extract contents in KEY.
+Returns an alist.
+
+TYPE is the type of data (artist, album, track)."
+  (when-let* ((response (infrasonic-api-call endpoint params))
+              (item (alist-get key response)))
+    (if type
+        (infrasonic--standardise item type)
+      item)))
+
+(defun infrasonic--get-many (endpoint keys &optional params type)
+  "Get data from ENDPOINT, and extract content using KEYS.
+Returns a list of alists.
+
+KEYS is a list of the outer and inner keys of the OpenSubsonic API
+response (for example, \"searchResult3\" and \"song\"). PARAMS are
+optional API parameters."
+  (when-let* ((response (infrasonic-api-call endpoint params))
+              (items (map-nested-elt response keys))
+              (items-alist (infrasonic--ensure-alist-list items)))
+    (if type
+        (infrasonic--standardise-list items-alist type)
+      items-alist)))
+
 ;;;; Auth helpers
 
 (defun infrasonic--get-credentials ()
@@ -103,7 +158,9 @@ element according to the ITEMs TYPE."
 Returns an auth-source plist, or nil if not found.
 
 Searches `auth-source' files for an entry with \":host\" matching `infrasonic-url'."
-  (car (auth-source-search :host infrasonic-url :require '(:user :secret) :max 1)))
+  (car (auth-source-search :host infrasonic-url
+                           :require '(:user :secret)
+                           :max 1)))
 
 (defun infrasonic--get-auth-params ()
   "Return authentication info for Subsonic API calls.
@@ -121,7 +178,7 @@ Note that the token and salt are leaked locally in the player's process informat
         `(("u" . ,user)
           ("t" . ,token)
           ("s" . ,salt)
-          ("v" . "1.16.1")
+          ("v" . ,infrasonic--opensubsonic-version)
           ("c" . ,infrasonic-user-agent)
           ("f" . "json")))))
 
@@ -221,19 +278,6 @@ Returns nil, only displaying a success or failure message."
 Returns the parsed license response."
   (alist-get 'license (infrasonic-api-call "getLicense")))
 
-(defun infrasonic--get-items (endpoint rootkey itemkey &optional params)
-  "Get data from ENDPOINT, and extract content using ROOTKEY and ITEMKEY.
-Returns a list of items.
-
-ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp' for
-details.
-ROOTKEY is the top-level JSON key in the API response, ITEMKEY is the
-inner key (for example, \"searchResult3\" and \"song\"). Go to the above link for details.
-PARAMS are optional API parameters."
-  (when-let* ((response (infrasonic-api-call endpoint params))
-              (items (map-nested-elt response (list rootkey itemkey))))
-    items))
-
 ;;;; Browsing
 ;; Not including: getMusicFolders, getIndexes, getMusicDirectory, getVideos,
 ;; getVideoInfo, getArtistInfo, getAlbumInfo, getSimilarSongs
@@ -255,12 +299,11 @@ artists under the alphabetical index:
  ...)
 This function returns artists completely flattened:
 ((<artist>) (<artist>) ...)"
-  (let ((indexes (infrasonic--get-items "getArtists"
-                                        'artists 'index)))
+  ;; Dont tag with :artist yet, since these are indices
+  (let ((indexes (infrasonic--get-many "getArtists" '(artists index))))
     ;; flatten the indexes -> list of artist-lists
     (mapcan (lambda (index)
-              (mapcar (lambda (artist) (infrasonic--standardise artist :artist))
-                      (alist-get 'artist index)))
+              (infrasonic--standardise-list (alist-get 'artist index) :artist))
             indexes)))
 
 ;;; getArtist
@@ -271,11 +314,10 @@ Returns a flat list of albums by artist with ARTIST-ID, with (subsonic-type .
 :album) appended to each album.
 
 The \"getArtists\" endpoint returns a list of albums."
-  (let ((albums (infrasonic--get-items "getArtist"
-                                       'artist 'album
-                                       `(("id" . ,artist-id)))))
-    (mapcar (lambda (album) (infrasonic--standardise album :album))
-            albums)))
+  (infrasonic--get-many "getArtist"
+                        '(artist album)
+                        `(("id" . ,artist-id))
+                        :album))
 
 ;;; getAlbum
 
@@ -286,19 +328,20 @@ Returns a flat list of tracks in album with ALBUM-ID, with (subsonic-type
 
 The \"getAlbum\" endpoint returns a list of tracks. The tracks do not
 contain a name element like albums and artists do, so we add it here."
-  (let ((tracks (infrasonic--get-items "getAlbum"
-                                       'album 'song
-                                       `(("id" . ,album-id)))))
-    (mapcar (lambda (track) (infrasonic--standardise track :track))
-            tracks)))
+  (infrasonic--get-many "getAlbum"
+                        '(album song)
+                        `(("id" . ,album-id))
+                        :track))
 
 ;;; getSong
 
 (defun infrasonic-get-song (track-id)
   "Get information for a track with TRACK-ID.
 Returns the parsed list of track attributes."
-  (let ((track (infrasonic-api-call "getSong" `(("id" . ,track-id)))))
-    (infrasonic--standardise (alist-get 'song track) :track)))
+  (infrasonic--get-one "getSong"
+                       'song
+                       `(("id" . ,track-id))
+                       :track))
 
 ;;; getArtistInfo2
 
@@ -324,26 +367,24 @@ Returns the parsed list of album attributes."
 (defun infrasonic-get-similar-songs (artist-id &optional n)
   "Get N random songs from ARTIST-ID and from similar artists.
 Returns a list of songs."
-  (let* ((n-tracks (or n infrasonic-search-max-results))
-         (tracks (infrasonic--get-items "getSimilarSongs2"
-                                        'similarSongs2 'song
-                                        `(("id" . ,artist-id)
-                                          ("count" . ,n-tracks)))))
-    (mapcar (lambda (track) (infrasonic--standardise track :track))
-            tracks)))
+  (let ((n-tracks (or n infrasonic-search-max-results)))
+    (infrasonic--get-many "getSimilarSongs2"
+                          '(similarSongs2 song)
+                          `(("id" . ,artist-id)
+                            ("count" . ,(number-to-string n-tracks)))
+                          :track)))
 
 ;;; getTopSongs
 
 (defun infrasonic-get-top-songs (artist-id &optional n)
   "Get ARTIST-ID's N top songs.
 Returns a list of songs."
-  (let* ((n-tracks (or n infrasonic-search-max-results))
-         (tracks (infrasonic--get-items "getTopSongs"
-                                        'topSongs 'song
-                                        `(("id" . ,artist-id)
-                                          ("count" . ,n-tracks)))))
-    (mapcar (lambda (track) (infrasonic--standardise track :track))
-            tracks)))
+  (let ((n-tracks (or n infrasonic-search-max-results)))
+    (infrasonic--get-many "getTopSongs"
+                          '(topSongs song)
+                          `(("id" . ,artist-id)
+                            ("count" . ,(number-to-string n-tracks)))
+                          :track)))
 
 ;;;; Album/song lists
 ;; Not including: getAlbumList, getStarred
@@ -376,14 +417,13 @@ TYPE may be:
                       (_ "byGenre")))
          (params (append
                   `(("type" . ,list-type)
-                    ("size" . ,n-albums)
-                    (when (stringp type)
-                      ("genre" . ,type)))))
-         (albums (infrasonic--get-items "getAlbumList2"
-                                        'albumList2 'album
-                                        params)))
-    (mapcar (lambda (album) (infrasonic--standardise album :album))
-            albums)))
+                    ("size" . ,(number-to-string n-albums)))
+                  (when (stringp type)
+                    `(("genre" . ,type))))))
+    (infrasonic--get-many "getAlbumList2"
+                          '(albumList2 album)
+                          params
+                          :album)))
 
 ;;; getRandomSongs
 
@@ -392,33 +432,33 @@ TYPE may be:
 Returns a N length list of parsed JSON tracks.
 
 Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
-  (let ((n-tracks (or n infrasonic-search-max-results))
-        (tracks (infrasonic--get-items "getRandomSongs"
-                                       'randomSongs 'song
-                                       `(("size" . ,n-tracks)))))
-    (mapcar (lambda (track) (infrasonic--standardise track :track))
-            tracks)))
+  (let ((n-tracks (or n infrasonic-search-max-results)))
+    (infrasonic--get-many "getRandomSongs"
+                          '(randomSongs song)
+                          `(("size" . ,(number-to-string n-tracks)))
+                          :track)))
 
 ;;; getSongsByGenre
 
 (defun infrasonic-get-songs-by-genre (genre &optional n)
   "Get N songs in GENRE.
 Returns a list of songs."
-  (let ((n-tracks (or n infrasonic-search-max-results))
-        (tracks (infrasonic--get-items "getSongsByGenre"
-                                       'songsByGenre 'song
-                                       `(("genre" . ,genre)
-                                         ("count" . ,n-tracks)))))
-    (mapcar (lambda (track) (infrasonic--standardise track :track))
-            tracks)))
+  (let ((n-tracks (or n infrasonic-search-max-results)))
+    (infrasonic--get-many "getSongsByGenre"
+                          '(songsByGenre song)
+                          `(("genre" . ,genre)
+                            ("count" . ,(number-to-string n-tracks)))
+                          :track)))
 
 ;;; Playlists
 
 (defun infrasonic-get-playlists ()
   "Fetch all of the user's playlists from the server.
 Returns an alist mapping playlist names to their IDs: ((name . id) ...)."
-  (when-let* ((items (infrasonic--get-items "getPlaylists"
-                                            'playlists 'playlist)))
+  (when-let* ((items (infrasonic--get-many "getPlaylists"
+                                           '(playlists playlist)
+                                           nil
+                                           :playlist)))
     (mapcar (lambda (item)
               (cons (alist-get 'name item)
                     (format "%s" (alist-get 'id item))))
@@ -427,21 +467,17 @@ Returns an alist mapping playlist names to their IDs: ((name . id) ...)."
 (defun infrasonic-get-playlist-tracks (playlist-id)
   "Fetch all tracks in playlist with PLAYLIST-ID.
 Returns a list of parsed JSON tracks."
-  (let ((tracks (infrasonic--get-items "getPlaylist"
-                                       'playlist 'entry
-                                       `(("id" . ,playlist-id)))))
-    (mapcar (lambda (track) (infrasonic--standardise track :track))
-            tracks)))
+  (infrasonic--get-many "getPlaylist"
+                        '(playlist entry)
+                        `(("id" . ,playlist-id))
+                        :track))
 
 ;;; Star
 
 (defun infrasonic-get-starred-tracks ()
   "Fetch all starred tracks from the server.
 Returns a list of parsed JSON tracks."
-  (let ((tracks (infrasonic--get-items "getStarred2"
-                                       'starred2 'song)))
-    (mapcar (lambda (track) (infrasonic--standardise track :track))
-            tracks)))
+  (infrasonic--get-many "getStarred2" '(starred2 song) nil :track))
 
 ;;;; Setters
 
@@ -492,28 +528,25 @@ have the `name' element added."
                    ("songCount" . ,max-results)))
          (response (infrasonic-api-call "search3" params))
          (result (alist-get 'searchResult3 response))
-         (artists (alist-get 'artist result))
-         (albums (alist-get 'album result))
-         (tracks (alist-get 'song result)))
+         (artists (infrasonic--ensure-alist-list (alist-get 'artist result)))
+         (albums (infrasonic--ensure-alist-list (alist-get 'album result)))
+         (tracks (infrasonic--ensure-alist-list (alist-get 'song result))))
     (append
-     (mapcar (lambda (artist) (infrasonic--standardise artist :artist))
-             artists)
-     (mapcar (lambda (album) (infrasonic--standardise album :album))
-             albums)
-     (mapcar (lambda (track) (infrasonic--standardise track :track))
-             tracks))))
+     (infrasonic--standardise-list artists :artist)
+     (infrasonic--standardise-list albums :album)
+     (infrasonic--standardise-list tracks :track))))
 
-(defun infrasonic-search-tracks (query)
+(defun infrasonic-search-tracks (query n)
   "Search the server for tracks matching QUERY.
 Returns a list of parsed JSON tracks.
 
 Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
-  (let ((tracks (infrasonic--get-items "search3"
-                                       'searchResult3 'song
-                                       `(("query" . ,query)
-                                         ("songCount" . ,(number-to-string infrasonic-search-max-results))))))
-    (mapcar (lambda (track) (infrasonic--standardise track :track))
-            tracks)))
+  (let ((n-tracks (or n infrasonic-search-max-results)))
+    (infrasonic--get-many "search3"
+                          '(searchResult3 song)
+                          `(("query" . ,query)
+                            ("songCount" . ,(number-to-string n-tracks)))
+                          :track)))
 
 ;;; Bulk get tracks
 
@@ -527,18 +560,11 @@ LEVEL determines what level of the hierarchy we are on:
   (let ((infrasonic--auth-params (infrasonic--get-auth-params)))
     (pcase level
       (:artist
-       (let ((albums (infrasonic--get-items "getArtist"
-                                            'artist 'album
-                                            `(("id" . ,item-id)))))
-         (mapcan (lambda (album)
-                   (infrasonic-get-all-tracks (alist-get 'id album) :album))
-                 albums)))
+       (mapcan (lambda (album)
+                 (infrasonic-get-all-tracks (alist-get 'id album) :album))
+               (infrasonic-get-artist item-id)))
       (:album
-       (let ((tracks (infrasonic--get-items "getAlbum"
-                                            'album 'song
-                                            `(("id" . ,item-id)))))
-         (mapcar (lambda (track) (infrasonic--standardise track :track))
-                 tracks))))))
+       (infrasonic-get-album item-id)))))
 
 ;;;; Write requests
 
@@ -578,10 +604,11 @@ This function uses a POST request since large playlists can return HTTP error 41
   "Return the art URL for ITEM-ID.
 
 SIZE is the size of the cover art."
-  (infrasonic--build-url "getCoverArt"
-                         (append (infrasonic--get-auth-params)
-                                 `(("id" . ,item-id)
-                                   ("size" . ,(if size (number-to-string size) "64"))))))
+  (let ((art-size (or size infrasonic--art-size)))
+    (infrasonic--build-url "getCoverArt"
+                           (append (infrasonic--get-auth-params)
+                                   `(("id" . ,item-id)
+                                     ("size" . ,(number-to-string art-size)))))))
 
 (defun infrasonic-get-art (url file &optional callback)
   "Download cover art at URL and write to FILE.
