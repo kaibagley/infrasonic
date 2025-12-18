@@ -188,8 +188,6 @@ The JSON should usually be processed by `infrasonic--process-api-response'."
       :then (or callback 'sync)
       :else (lambda (err) (error "Subsonic API request error: %s" err)))))
 
-;;;; Data formatting
-
 (defun infrasonic-get-stream-url (track-id)
   "Create a streaming URL for track with TRACK-ID.
 Returns a complete URL for MPV or VLC to directly stream from the server."
@@ -224,11 +222,13 @@ PARAMS are optional API parameters."
               (items (map-nested-elt response (list rootkey itemkey))))
     items))
 
-;;; ID3 Getters
+;;;; ID3 Getters
 ;; These functions get artists, albums and tracks using the ID3 endpoints
 ;; They also add:
 ;; - subsonic-type element (:artist, :album, :track),
 ;; - name element (tracks use title instead of name, so ensure everything has a name
+
+;;; Artists
 
 (defun infrasonic-get-artists ()
   "Get a list of artists.
@@ -251,6 +251,23 @@ This function returns artists completely flattened:
                       (alist-get 'artist index)))
             indexes)))
 
+;;; Albums
+
+(defun infrasonic-get-album-list (type)
+  "Return an album list.
+Returns a list of albums. Number returned is dictated by
+`infrasonic-search-max-results'.
+
+TYPE may be:
+- `:random': Random albums.
+- `:newest': Newest albums by release date.
+- `:frequent': User's most frequently played albums.
+- `:recent': Recently added albums.
+- `:starred': Starred albums.
+- `:byname': Alphabetically sorted by name.
+- `:byartist': Alphabetically sorted by artist. "
+  )
+
 (defun infrasonic-get-artist (artist-id)
   "Get a list of albums for artist with ARTIST-ID.
 Returns a flat list of albums by artist with ARTIST-ID, with (subsonic-type .
@@ -262,6 +279,8 @@ The \"getArtists\" endpoint returns a list of albums."
                                        `(("id" . ,artist-id)))))
     (mapcar (lambda (album) (infrasonic--standardise album :album))
             albums)))
+
+;;; Tracks under album
 
 (defun infrasonic-get-album (album-id)
   "Get a list of tracks for album with ALBUM-ID.
@@ -474,6 +493,9 @@ downloading."
 (defun infrasonic-children (id level)
   "Fetch \"nodes\" for directory hierarchy LEVEL and ID.
 Returns a list of alists, each alist representing children of ID.
+
+This is intended as a helper function for accessing the OpenSubsonic
+server as a directory structure.
 
 LEVEL determines the endpoint to use, and may be one of:
 - :artists: Returns top-level view of all artists using endpoint \"getArtists\".

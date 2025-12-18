@@ -184,13 +184,17 @@ Some examples:
 | `infrasonic-search`              | `search3`                           | Flat list of results: `((artist1) (album1) (track1) ...)` |
 | `infrasonic-search-tracks`       | `search3`                           | List of tracks: `((track1) (track2) ...)`                 |
 | `infrasonic-get-all-tracks`      | `getArtist` / `getAlbum`            | List of tracks: `((track1) (track2) ...)`                 |
-| `infrasonic-create-playlist`     | `createPlaylist`                    | "Playlist object: `((id . ""1"") (name . ""foo"") ...)`"  |
+| `infrasonic-create-playlist`     | `createPlaylist`                    | Playlist object: `((id . ""1"") (name . ""foo"") ...)`    |
 | `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                       |
-| `infrasonic-get-art-url`         | Builds `getCoverArt`                | Complete URL string for image resource                    |
+| `infrasonic-get-art-url`         | Builds `getCoverArt` URL            | Complete URL string for image resource                    |
 | `infrasonic-get-art`             | Requests `getCoverArt`              | File path to downloaded image                             |
 | `infrasonic-children`            | `getArtists`/`getArtist`/`getAlbum` | List of items (artists, albums, or tracks)                |
 
 ## API Implementation Status
+
+`infrasonic` only plans to support ID3 endpoints (e.g. `search` and `search2`
+will likely not be implemented).
+
 <details><summary><b>Click to expand the API implementation checklist</b></summary>
 ### 1.0.0
 - [ ] download
