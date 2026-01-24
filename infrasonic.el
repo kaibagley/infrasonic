@@ -530,6 +530,36 @@ data."
                         `(("id" . ,item-id))
                         callback))
 
+;;; Bookmark
+
+(defun infrasonic-create-bookmark (track-id position &optional callback)
+  "Create or update a bookmark for track with TRACK-ID at POSITION.
+Returns the parsed API response, which will be an empty
+\"<subsonic-response>\" element on success.
+
+Sends a request to the \"createBookmark\" endpoint. If CALLBACK is
+non-nil, request will be asynchronous and CALLBACK will be evaluated on
+the response data."
+  (infrasonic-api-call "createBookmark" `(("id" . ,track-id)) callback))
+
+(defun infrasonic-delete-bookmark (track-id &optional callback)
+  "Delete the bookmark on track with TRACK-ID.
+Returns the parsed API response.
+
+Sends a request to the \"deleteBookmark\" endpoint. If CALLBACK is
+non-nil, request will be asynchronous and CALLBACK will be evaluated on
+the response data."
+  (infrasonic-api-call "deleteBookmark" `(("id" . ,track-id)) callback))
+
+(defun infrasonic-get-bookmarks (&optional callback)
+  "Gets all bookmarks for the user.
+Returns the parsed API response
+
+Sends a request to the \"deleteBookmark\" endpoint. If CALLBACK is
+non-nil, request will be asynchronous and CALLBACK will be evaluated on
+the response data."
+  (infrasonic-api-call "deleteBookmark" `(("id" . ,track-id)) callback))
+
 ;;; Scrobble
 
 (defun infrasonic-scrobble (track-id status)

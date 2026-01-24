@@ -193,7 +193,8 @@ Some examples:
 ## API Implementation Status
 
 `infrasonic` only plans to support ID3 endpoints (e.g. `search` and `search2`
-will likely not be implemented).
+will likely not be implemented). `infrasonic` will only support music and has
+no plans to support podcasts or music videos.
 
 <details><summary><b>Click to expand the API implementation checklist</b></summary>
 ### 1.0.0
