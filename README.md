@@ -178,8 +178,11 @@ Some examples:
 | `infrasonic-get-playlists`       | `getPlaylists`                      | Alist of names/IDs: `((name . id) ...)`                   |
 | `infrasonic-get-playlist-tracks` | `getPlaylist`                       | List of tracks: `((track1) (track2) ...)`                 |
 | `infrasonic-get-starred-tracks`  | `getStarred2`                       | List of tracks: `((track1) (track2) ...)`                 |
-| `infrasonic-star`                | `star` / `unstar`                   | `nil` (Displays success/failure message)                  |
-| `infrasonic-scrobble`            | `scrobble`                          | `nil`                                                     |
+| `infrasonic-star`                | `star` / `unstar`                   | Parsed response                                           |
+| `infrasonic-create-bookmark`     | `createBookmark`                    | Parsed response                                           |
+| `infrasonic-delete-bookmark`     | `deleteBookmark`                    | Parsed response                                           |
+| `infrasonic-get-bookmarks`       | `getBookmarks`                      | Parsed response                                           |
+| `infrasonic-scrobble`            | `scrobble`                          | Parsed response                                           |
 | `infrasonic-get-random-tracks`   | `getRandomSongs`                    | List of n tracks: `((track1) ...)`                        |
 | `infrasonic-search`              | `search3`                           | Flat list of results: `((artist1) (album1) (track1) ...)` |
 | `infrasonic-search-tracks`       | `search3`                           | List of tracks: `((track1) (track2) ...)`                 |
@@ -187,7 +190,8 @@ Some examples:
 | `infrasonic-create-playlist`     | `createPlaylist`                    | Playlist object: `((id . ""1"") (name . ""foo"") ...)`    |
 | `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                       |
 | `infrasonic-get-art-url`         | Builds `getCoverArt` URL            | Complete URL string for image resource                    |
-| `infrasonic-get-art`             | Requests `getCoverArt`              | File path to downloaded image                             |
+| `infrasonic-get-art`             | `getCoverArt`                       | File path to downloaded image                             |
+| `infrasonic-download`            | `download`                          | File path to downloaded music                             |
 | `infrasonic-children`            | `getArtists`/`getArtist`/`getAlbum` | List of items (artists, albums, or tracks)                |
 
 ## API Implementation Status
@@ -198,7 +202,7 @@ no plans to support podcasts or music videos.
 
 <details><summary><b>Click to expand the API implementation checklist</b></summary>
 ### 1.0.0
-- [ ] download
+- [x] download
 - [x] getCoverArt
 - [ ] getIndexes
 - [ ] getLicense
@@ -253,13 +257,13 @@ no plans to support podcasts or music videos.
 - [x] unstar
 - [ ] updatePlaylist
 ### 1.9.0
-- [ ] createBookmark
+- [x] createBookmark
 - [ ] createPodcastChannel
-- [ ] deleteBookmark
+- [x] deleteBookmark
 - [ ] deletePodcastChannel
 - [ ] deletePodcastEpisode
 - [ ] downloadPodcastEpisode
-- [ ] getBookmarks
+- [x] getBookmarks
 - [ ] getGenres
 - [ ] getInternetRadioStations
 - [ ] getSongsByGenre

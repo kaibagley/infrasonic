@@ -32,7 +32,7 @@
 ;; - HTTP requests using `plz'.
 ;; - JSON parsing.
 ;; - Response standardisation: items are tagged with:
-;;   (subsonic-type . :artist/:album/:track), and
+;;   (subsonic-type . :artist/:album/:track/:playlist), and
 ;;   (name . "...")
 ;;
 ;; Configuration:
@@ -102,6 +102,7 @@ For other operations, generate on the fly using `infrasonic--get-auth-params'.")
 
 (define-error 'infrasonic-error "Infrasonic error")
 (define-error 'infrasonic-api-error "Infrasonic API error" 'infrasonic-error)
+(define-error 'infrasonic-filesystem-error "Infrasonic filesystem error" 'infrasonic-error)
 
 ;;;; General helpers
 
@@ -540,7 +541,10 @@ Returns the parsed API response, which will be an empty
 Sends a request to the \"createBookmark\" endpoint. If CALLBACK is
 non-nil, request will be asynchronous and CALLBACK will be evaluated on
 the response data."
-  (infrasonic-api-call "createBookmark" `(("id" . ,track-id)) callback))
+  (infrasonic-api-call "createBookmark"
+                       `(("id" . ,track-id)
+                         ("position" . ,(format "%s" position)))
+                       callback))
 
 (defun infrasonic-delete-bookmark (track-id &optional callback)
   "Delete the bookmark on track with TRACK-ID.
@@ -553,12 +557,12 @@ the response data."
 
 (defun infrasonic-get-bookmarks (&optional callback)
   "Gets all bookmarks for the user.
-Returns the parsed API response
+Returns the parsed API response.
 
-Sends a request to the \"deleteBookmark\" endpoint. If CALLBACK is
+Sends a request to the \"getBookmarks\" endpoint. If CALLBACK is
 non-nil, request will be asynchronous and CALLBACK will be evaluated on
 the response data."
-  (infrasonic-api-call "deleteBookmark" `(("id" . ,track-id)) callback))
+  (infrasonic-api-call "getBookmarks" nil callback))
 
 ;;; Scrobble
 
@@ -678,23 +682,69 @@ SIZE is the size of the cover art."
                                    `(("id" . ,item-id)
                                      ("size" . ,(number-to-string art-size)))))))
 
-(defun infrasonic-get-art (url file &optional callback)
-  "Download cover art at URL and write to FILE.
+(defun infrasonic-get-art (url target-file &optional callback)
+  "Download cover art at URL and write to TARGET-FILE.
 Returns the path to the downloaded file.
 
 CALLBACK is called when the art is downloaded. This may be used to
-display the image in FILE somewhere in Emacs once it's finished
+display the image in TARGET-FILE somewhere in Emacs once it's finished
 downloading."
   (plz 'get url
-    :as `(file ,file)
+    :as `(file ,target-file)
     :then (or callback 'sync)
     :else (lambda (err)
-            (signal 'infrasonic-api-error (list "Subsonic download failed"
-                                                err)))))
+            (signal 'infrasonic-api-error
+                    (list "Subsonic art download failed" err)))))
+
+;;; Download
+
+(defun infrasonic--download (item-id target-file &optional callback)
+  "Asynchronously download track with ITEM-ID to TARGET-FILE.
+Returns the `plz' process object.
+
+Downloads ITEM-ID to a temporary directory, and moves to TARGET-FILE
+after sucessful. On failure, the function cleans up the failed download.
+CALLBACK is called on the newly-downloaded filepath."
+  (let ((url (infrasonic--build-url "download"
+                                    (append (infrasonic--get-auth-params)
+                                            `(("id" . ,item-id)))))
+        (temp-file (make-temp-name (expand-file-name "infrasonic-part-"
+                                                     temporary-file-directory))))
+    (make-directory (file-name-directory (expand-file-name target-file)) t)
+    (plz 'get url
+      :as `(file ,temp-file)
+      :then (lambda (_)
+              (condition-case err
+                  (progn
+                    (rename-file temp-file target-file t)
+                    (when callback (funcall callback target-file)))
+                (error
+                 (when (file-exists-p temp-file) (delete-file temp-file))
+                 (signal 'infrasonic-filesystem-error
+                         (list "Failed to finalise download" err target-file)))))
+      :else (lambda (err)
+              ;; Clean temp files
+              (when (file-exists-p temp-file) (delete-file temp-file))
+              (signal 'infrasonic-api-error
+                      (list "Music download failed" err)))
+      ;; 5 minute timeout
+      :timeout 300)))
+
+(defun infrasonic-download (item-id out-dir &optional callback)
+  "Asynchronously download track with ITEM-ID to TARGET-FILE.
+Returns the path to the downloaded file.
+
+Downloads ITEM-ID to a temporary directory, and moves to TARGET-FILE
+after sucessful. On failure, the function cleans up the failed download.
+CALLBACK is called on the newly-downloaded filepath."
+  (let* ((track-info (infrasonic-get-song item-id))
+         (suffix (alist-get 'suffix track-info))
+         (title (alist-get 'name track-info))
+         (filename (format "%s.%s" title suffix))
+         (full-path (expand-file-name filename out-dir)))
+    (infrasonic--download item-id full-path callback)))
 
 ;;; High-level stuff
-
-
 
 (defun infrasonic-children (id level)
   "Fetch \"nodes\" for directory hierarchy LEVEL and ID.
