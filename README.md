@@ -66,7 +66,7 @@ machine music.example.com login my_username password my_secret_password
 
 3. Low-level Functions
 
-Test connection using `M-x infrasonic-ping-server`.
+Test connection using `M-x infrasonic-ping`.
 
 `infrasonic` is designed to be used as a backend for other multimedia packages
 (like listen.el).
@@ -171,7 +171,7 @@ Some examples:
 | Function name                    | API endpoint                        | Returns                                                   |
 |----------------------------------|-------------------------------------|-----------------------------------------------------------|
 | `infrasonic-get-stream-url`      | `stream`                            | Complete URL string for streaming                         |
-| `infrasonic-ping-server`         | `ping`                              | `nil` (Displays success/failure message)                  |
+| `infrasonic-ping`                | `ping`                              | `nil` (Displays success/failure message)                  |
 | `infrasonic-get-artists`         | `getArtists`                        | Flat list of artists: `((artist1) (artist2) ...)`         |
 | `infrasonic-get-artist`          | `getArtist`                         | Flat list of albums: `((album1) (album2) ...)`            |
 | `infrasonic-get-album`           | `getAlbum`                          | Flat list of tracks: `((track1) (track2) ...)`            |
