@@ -24,7 +24,6 @@
 
 ;;; Commentary:
 
-
 ;; Infrasonic is a small client library for the OpenSubsonic REST API that
 ;; provides:
 ;;
@@ -53,18 +52,19 @@
 ;; Functions signal `infrasonic-error' for local errors and
 ;; `infrasonic-api-error' for API failures.
 
+;; TODO: Fix documentation for new workflow
+;; TODO: reimplement auth caching with the new client stuff
+
 ;;; Code:
 
 ;;;; Requirements
 
-;; TODO: Send bookmark request to server periodically
-;; TODO: When emacs 31.1 is released, cl-decf/cl-incf -> decf/incf
-
 (require 'plz)          ; HTTP requests
 (require 'auth-source)  ; authinfo
+(require 'json)
+
 (require 'subr-x)       ; for when-let
 (require 'gv)           ; for setf
-
 (require 'map)          ; for map-nested-elt
 (require 'url-util)     ; for url-build-query-string
 
@@ -72,39 +72,49 @@
 
 ;;;; Customisation
 
-(defvar infrasonic-url ""
-  "The fully-qualified domain name of your OpenSubsonic-compatible server.
-For example, \"music.example.com\" or \"192.168.0.0:4533\".
-Don't include the protocol/scheme or the resource path.")
+;; Defaults
 
-(defvar infrasonic-protocol "https"
-  "Protocol to use for calls to Subsonic API.
-Must be either \"http\" or \"https\" (default).")
+(defconst infrasonic--default-user-agent "infrasonic")
+(defconst infrasonic--default-api-version "1.16.1")
+(defconst infrasonic--default-queue-limit 5)
+(defconst infrasonic--default-timeout 300)
+(defconst infrasonic--default-art-size 64)
+(defconst infrasonic--default-search-max-results 200)
 
-(defvar infrasonic-search-max-results 200
-  "Maximum results to return in search queries.")
-
-(defvar infrasonic-user-agent "infrasonic"
-  "User-agent used in API requests.
-Used by the server to identify the player.")
-
-(defvar infrasonic-art-size 64
-  "Size of the square cover art images.")
-
-(defvar infrasonic--auth-params nil
-  "The authentication URL parameters.
-This should not be set globally.
-For batch operations, this is let-bound.
-For other operations, generate on the fly using `infrasonic--get-auth-params'.")
-
-(defconst infrasonic-opensubsonic-version "1.16.1"
-  "OpenSubsonic API version of the server.")
+;; Errors
 
 (define-error 'infrasonic-error "Infrasonic error")
 (define-error 'infrasonic-api-error "Infrasonic API error" 'infrasonic-error)
 (define-error 'infrasonic-filesystem-error "Infrasonic filesystem error" 'infrasonic-error)
 
 ;;;; General helpers
+
+(defun infrasonic-make-client (&rest plist)
+  "Return an `infrasonic' client plist.
+
+Should be comprised of (default values):
+- :url                (no default)
+- :protocol           (no default)
+- :user-agent         (\"infrasonic\")
+- :api-version        (\"1.16.1\")
+- :queue-limit        (5)
+- :timeout            (300)
+- :art-size           (64)
+- :search-max-results (200)"
+  plist)
+
+(defun infrasonic--client-get (client key &optional default)
+  (or (plist-get client key) default))
+
+(defun infrasonic--validate-client (client)
+  "Throw an error if there is something suspect about a client's
+configuration."
+  (let ((url (infrasonic--client-get client :url))
+        (protocol (infrasonic--client-get client :protocol "https")))
+    (unless (and (stringp url) (not (string-empty-p url)))
+      (signal 'infrasonic-error (list "Client missing valid :url" url)))
+    (unless (member protocol '("http" "https"))
+      (signal 'infrasonic-error (list "Client has invalid :protocol" protocol)))))
 
 (defun infrasonic--standardise (item type)
   "Standardise ITEM of TYPE.
@@ -135,23 +145,37 @@ Returns a list of standardised ITEMs."
 
 (defun infrasonic--ensure-alist-list (l)
   "Return L as a list of alists."
-  (cond ((null l) nil)                 ; l empty, return nil
+  (cond ((null l) nil)                     ; l empty, return nil
         ((infrasonic--alist-p l) (list l)) ; l single cons, wrap list
         (t l)))
 
-(defun infrasonic--get-one (endpoint key &optional params type)
+(defun infrasonic--safe-filename (filename)
+  (replace-regexp-in-string "[/\\:*?\"<>|\n\r\t]" "_" filename))
+
+(defun infrasonic-child (level)
+  "Determines the hierarchical level under LEVEL.
+Returns the keyword symbol for the next level.
+
+Hierarchy is: :artists -> :artist -> :album."
+  (pcase level
+    (:artists :artist)
+    (:artist :album)
+    (:album :track)
+    (_ :track)))
+
+(defun infrasonic--get-one (client endpoint key &optional params type)
   "Get data from ENDPOINT that returns one item, and extract contents in KEY.
 Returns an alist.
 
 PARAMS are optional API parameters.
 TYPE is the type of data (artist, album, track)."
-  (when-let* ((response (infrasonic-api-call endpoint params))
+  (when-let* ((response (infrasonic-api-call client endpoint params))
               (item (alist-get key response)))
     (if type
         (infrasonic--standardise item type)
       item)))
 
-(defun infrasonic--get-many (endpoint keys &optional params type)
+(defun infrasonic--get-many (client endpoint keys &optional params type)
   "Get data from ENDPOINT, and extract content using KEYS.
 Returns a list of alists.
 
@@ -159,7 +183,7 @@ KEYS is a list of the outer and inner keys of the OpenSubsonic API
 response (for example, \"searchResult3\" and \"song\"). PARAMS are
 optional API parameters. TYPE is the type of the items being retrieved
 \(:artist, :album, etc.)"
-  (when-let* ((response (infrasonic-api-call endpoint params))
+  (when-let* ((response (infrasonic-api-call client endpoint params))
               (items (map-nested-elt response keys))
               (items-alist (infrasonic--ensure-alist-list items)))
     (if type
@@ -168,55 +192,57 @@ optional API parameters. TYPE is the type of the items being retrieved
 
 ;;;; Auth helpers
 
-(defun infrasonic--get-credentials ()
+(defun infrasonic--get-credentials (client)
   "Fetch user credentials securely using `auth-source'.
 Returns an auth-source plist, or nil if not found.
 
-Searches `auth-source' files for an entry with \":host\" matching
-`infrasonic-url'."
-  (car (auth-source-search :host infrasonic-url
+Searches `auth-source' files for an entry with \":host\" matching client :url."
+  (car (auth-source-search :host (infrasonic--client-get client :url)
                            :require '(:user :secret)
                            :max 1)))
 
-(defun infrasonic--get-auth-params ()
+(defun infrasonic--get-auth-params (client)
   "Return authentication info for Subsonic API calls.
 Return an alist of strings:
 \((\"u\" . \"myusername\") (\"t\" . \"<randomstring>\") ...).
 
 Note that the token and salt are leaked locally in the player's process
 information."
-  (or infrasonic--auth-params
-      (let* ((creds (or (infrasonic--get-credentials)
-                        (signal 'infrasonic-error
-                                (list "No auth-source entry found for host"
-                                      infrasonic-url))))
-             (user (plist-get creds :user))
-             (secret (plist-get creds :secret))
-             (pass (if (functionp secret) (funcall secret) secret))
-             (salt (format "%06x" (random #xffffff)))
-             (token (secure-hash 'md5 (concat pass salt))))
-        `(("u" . ,user)
-          ("t" . ,token)
-          ("s" . ,salt)
-          ("v" . ,infrasonic-opensubsonic-version)
-          ("c" . ,infrasonic-user-agent)
-          ("f" . "json")))))
+  (let* ((host (infrasonic--client-get client :url))
+         (api-version (infrasonic--client-get client :api-version infrasonic--default-api-version))
+         (user-agent (infrasonic--client-get client :user-agent infrasonic--default-user-agent))
+         (creds (or (infrasonic--get-credentials client)
+                    (signal 'infrasonic-error
+                            (list "No auth-source entry found for host" host))))
+         (user (plist-get creds :user))
+         (secret (plist-get creds :secret))
+         (pass (if (functionp secret) (funcall secret) secret))
+         (salt (format "%06x" (random #xffffff)))
+         (token (secure-hash 'md5 (concat pass salt))))
+    `(("u" . ,user)
+      ("t" . ,token)
+      ("s" . ,salt)
+      ("v" . ,api-version)
+      ("c" . ,user-agent)
+      ("f" . "json"))))
 
-(defun infrasonic--build-url (endpoint params)
+(defun infrasonic--build-url (client endpoint params)
   "Build an OpenSubsonic REST API URL from ENDPOINT and PARAMS.
 Returns a complete URL required to make an API call.
 
 ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp'
 for details.
 PARAMS is an alist of query parameters."
-  (let* ((param-list (mapcar (lambda (p)
+  (let* ((host (infrasonic--client-get client :url))
+         (protocol (infrasonic--client-get client :protocol "https"))
+         (param-list (mapcar (lambda (p)
                                (list (car p) (cdr p)))
                              params))
          (param-str (url-build-query-string param-list nil t)))
     (concat
      (format "%s://%s/rest/%s.view"
-             infrasonic-protocol
-             infrasonic-url
+             protocol
+             host
              endpoint)
      (when (and param-str (not (string-empty-p param-str)))
        (format "?%s" param-str)))))
@@ -250,44 +276,61 @@ Should be called from a buffer containing an API response."
      (signal 'infrasonic-error (list "Error parsing JSON response"
                                      (error-message-string err))))))
 
-(defun infrasonic-api-call (endpoint &optional params callback body)
-  "Make a call to the OpenSubsonic API.
-Returns the parsed JSON if CALLBACK is nil.
-Returns the curl process object if CALLBACK is non-nil.
+(defun infrasonic--request (queue &rest args)
+  "Submit a HTTP request, or add it to QUEUE.
+
+If QUEUE is non-nil, add a `plz' request with ARGS to a `plz-queue', and
+return QUEUE.
+If QUEUE is nil, call `plz' immediately with ARGS and return the `plz' request
+object."
+  (if queue
+      (apply #'plz-queue queue args)
+    (apply #'plz args)))
+
+(defun infrasonic-api-call (client endpoint &optional params callback errback body queue)
+  "Make a call to the OpenSubsonic API from CLIENT.
+If QUEUE is nil, return parsed JSON (sync) or the `plz' process object (async).
+If QUEUE is non-nil, return the `plz-queue'.
 
 ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp'
 for details.
+
 PARAMS is an alist of additional parameters.
-If CALLBACK is nil, run synchronously and parse the JSON response.
-If CALLBACK is non-nil, run asynchronously and parse the JSON response, then
-call CALLBACK on the parsed JSON.
+
+If BODY is non-nil, use a POST request rather than GET, and BODY is the body of
+the POST.
+
+If QUEUE is non-nil, add the request to a `plz-queue'. When QUEUE is non-nil,
+CALLBACK must be provided.
 
 The JSON should usually be processed by `infrasonic--process-api-response'."
-  (when (equal infrasonic-url "")
-    (signal 'infrasonic-error (list "Please set `infrasonic-url'")))
-  (let* ((api-params (append (infrasonic--get-auth-params) params))
-         (http-method (if body 'post 'get))
-         (api-url (infrasonic--build-url endpoint api-params))
+  (infrasonic--validate-client client)
+  (when (and queue (not (functionp callback)))
+    (signal 'infrasonic-error (list "Queued API calls must be asynchronous, ensure CALLBACK is a function")))
+  (let* ((api-params (append (infrasonic--get-auth-params client) params))
+         (api-url (infrasonic--build-url client endpoint api-params))
          (api-headers '(("Accept-Encoding" . "gzip")
                         ("Content-Type" . "application/x-www-form-urlencoded"))))
-    (plz http-method api-url
-      :headers api-headers
-      :body body
-      :as #'infrasonic--process-api-response
-      :then (or callback 'sync)
-      :else (lambda (err)
-              (if callback
-                  (message "Subsonic API request error: %s" err)
-                (signal 'infrasonic-api-error (list "Subsonic API request error"
-                                                    err)))))))
+    (infrasonic--request
+     queue
+     (if body 'post 'get)
+     api-url
+     :headers api-headers
+     :body body
+     :as #'infrasonic--process-api-response
+     :then (or callback 'sync)
+     :else (or errback
+               (lambda (err)
+                 (signal 'infrasonic-api-error
+                         (list "Subsonic API request error" err)))))))
 
-(defun infrasonic-get-stream-url (track-id)
+(defun infrasonic-get-stream-url (client track-id)
   "Create a streaming URL for track with TRACK-ID.
 Returns a complete URL for MPV or VLC to directly stream from the server."
-  (infrasonic--build-url
-   "stream"
-   (append (infrasonic--get-auth-params)
-           `(("id" . ,track-id)))))
+  (infrasonic--build-url client
+                         "stream"
+                         (append (infrasonic--get-auth-params client)
+                                 `(("id" . ,track-id)))))
 
 ;;;;; Endpoints
 
@@ -295,23 +338,25 @@ Returns a complete URL for MPV or VLC to directly stream from the server."
 
 ;;; ping
 
-(defun infrasonic-ping-server ()
+(defun infrasonic-ping (client &optional callback errback)
   "Ping the server to check connectivity and authentication.
 Returns nil, only displaying a success or failure message."
   (interactive)
-  (condition-case err
-      (progn
-        (infrasonic-api-call "ping")
-        (message "Successfully pinged OpenSubsonic server!"))
-    (infrasonic-error
-     (message "Failed to ping server: %s" (error-message-string err)))))
+  (if (functionp callback)
+      (infrasonic-api-call client "ping" nil callback errback)
+    (condition-case err
+        (progn
+          (infrasonic-api-call client "ping")
+          (message "Successfully pinged OpenSubsonic server!"))
+      (infrasonic-error
+       (message "Failed to ping server: %s" (error-message-string err))))))
 
 ;;; getLicense
 
-(defun infrasonic-get-license ()
+(defun infrasonic-get-license (client)
   "Get the license status from the OpenSubsonic server.
 Returns the parsed license response."
-  (alist-get 'license (infrasonic-api-call "getLicense")))
+  (alist-get 'license (infrasonic-api-call client "getLicense")))
 
 ;;;; Browsing
 ;; Not including: getMusicFolders, getIndexes, getMusicDirectory, getVideos,
@@ -321,7 +366,7 @@ Returns the parsed license response."
 
 ;;; getArtists
 
-(defun infrasonic-get-artists ()
+(defun infrasonic-get-artists (client)
   "Get a list of artists.
 Returns a flat list of artists, with (subsonic-type . :artist) appended
 to each artist.
@@ -335,7 +380,7 @@ artists under the alphabetical index:
 This function returns artists completely flattened:
 \((<artist>) (<artist>) ...)"
   ;; Dont tag with :artist yet, since these are indices
-  (let ((indexes (infrasonic--get-many "getArtists" '(artists index))))
+  (let ((indexes (infrasonic--get-many client "getArtists" '(artists index))))
     ;; flatten the indexes -> list of artist-lists
     (mapcan (lambda (index)
               (let ((artists (infrasonic--ensure-alist-list (alist-get 'artist index))))
@@ -344,67 +389,87 @@ This function returns artists completely flattened:
 
 ;;; getArtist
 
-(defun infrasonic-get-artist (artist-id)
+(defun infrasonic-get-artist (client artist-id)
   "Get a list of albums for artist with ARTIST-ID.
 Returns a flat list of albums by artist with ARTIST-ID, with (subsonic-type .
 :album) appended to each album.
 
 The \"getArtists\" endpoint returns a list of albums."
-  (infrasonic--get-many "getArtist"
+  (infrasonic--get-many client
+                        "getArtist"
                         '(artist album)
                         `(("id" . ,artist-id))
                         :album))
 
 ;;; getAlbum
 
-(defun infrasonic-get-album (album-id)
+(defun infrasonic-get-album (client album-id)
   "Get a list of tracks for album with ALBUM-ID.
 Returns a flat list of tracks in album with ALBUM-ID, with (subsonic-type
 . :track) and (name . <track name>) appended to each track.
 
 The \"getAlbum\" endpoint returns a list of tracks. The tracks do not
 contain a name element like albums and artists do, so we add it here."
-  (infrasonic--get-many "getAlbum"
+  (infrasonic--get-many client
+                        "getAlbum"
                         '(album song)
                         `(("id" . ,album-id))
                         :track))
 
 ;;; getSong
 
-(defun infrasonic-get-song (track-id)
+(defun infrasonic-get-song (client track-id)
   "Get information for a track with TRACK-ID.
 Returns the parsed list of track attributes."
-  (infrasonic--get-one "getSong"
+  (infrasonic--get-one client
+                       "getSong"
                        'song
                        `(("id" . ,track-id))
                        :track))
 
+(defun infrasonic-get-song-async (client track-id callback &optional errback)
+  "Asynchronously get information for a track with TRACK-ID.
+Returns a `plz' process object.
+
+CALLBACK is called on the parsed track alist."
+  (infrasonic-api-call client
+                       "getSong"
+                       `(("id" . ,track-id))
+                       (lambda (response)
+                         (funcall callback
+                                  (infrasonic--standardise (alist-get 'song response)
+                                                           :track)))
+   errback))
+
 ;;; getArtistInfo2
 
-(defun infrasonic-get-artist-info (artist-id)
+(defun infrasonic-get-artist-info (client artist-id)
   "Get information about the artist with ARTIST-ID.
 Returns the parsed list of artist attributes."
-  (let ((artist-info (infrasonic-api-call "getArtistInfo2"
+  (let ((artist-info (infrasonic-api-call client
+                                          "getArtistInfo2"
                                           `(("id" . ,artist-id)))))
     (alist-get 'artistInfo2 artist-info)))
 
 ;;; getAlbumInfo2
 
-(defun infrasonic-get-album-info (album-id)
+(defun infrasonic-get-album-info (client album-id)
   "Get information about the album with ALBUM-ID.
 Returns the parsed list of album attributes."
-  (let ((album-info (infrasonic-api-call "getAlbumInfo2"
+  (let ((album-info (infrasonic-api-call client
+                                         "getAlbumInfo2"
                                          `(("id" . ,album-id)))))
     ;; For some reason getAlbumInfo2 has nested albumInfo element (no 2)
     (alist-get 'albumInfo album-info)))
 
 ;;; getSimilarSongs2
 
-(defun infrasonic-get-similar-songs (artist-id &optional n)
+(defun infrasonic-get-similar-songs (client artist-id &optional n)
   "Get N random songs from ARTIST-ID and from similar artists.
 Returns a list of songs."
-  (let ((n-tracks (or n infrasonic-search-max-results)))
-    (infrasonic--get-many "getSimilarSongs2"
+  (let ((n-tracks (or n infrasonic--default-search-max-results)))
+    (infrasonic--get-many client
+                          "getSimilarSongs2"
                           '(similarSongs2 song)
                           `(("id" . ,artist-id)
                             ("count" . ,(number-to-string n-tracks)))
@@ -412,11 +477,12 @@ Returns a list of songs."
 
 ;;; getTopSongs
 
-(defun infrasonic-get-top-songs (artist-id &optional n)
+(defun infrasonic-get-top-songs (client artist-id &optional n)
   "Get ARTIST-ID's N top songs.
 Returns a list of songs."
-  (let ((n-tracks (or n infrasonic-search-max-results)))
-    (infrasonic--get-many "getTopSongs"
+  (let ((n-tracks (or n infrasonic--default-search-max-results)))
+    (infrasonic--get-many client
+                          "getTopSongs"
                           '(topSongs song)
                           `(("id" . ,artist-id)
                             ("count" . ,(number-to-string n-tracks)))
@@ -427,10 +493,10 @@ Returns a list of songs."
 
 ;;; getAlbumList2
 
-(defun infrasonic-get-album-list (type &optional n)
+(defun infrasonic-get-album-list (client type &optional n)
   "Return a list of N albums according to TYPE.
 Returns a list of albums. Number returned is dictated by either N, or
-`infrasonic-search-max-results' by default.
+`infrasonic--default-search-max-results' by default.
 
 TYPE may be:
 - A genre string, for example: \"Rock\".
@@ -441,7 +507,7 @@ TYPE may be:
 - `:starred': Starred albums.
 - `:byname': Alphabetically sorted by name.
 - `:byartist': Alphabetically sorted by artist."
-  (let* ((n-albums (or n infrasonic-search-max-results))
+  (let* ((n-albums (or n infrasonic--default-search-max-results))
          (list-type (pcase type
                       (:random "random")
                       (:newest "newest")
@@ -456,31 +522,34 @@ TYPE may be:
                     ("size" . ,(number-to-string n-albums)))
                   (when (stringp type)
                     `(("genre" . ,type))))))
-    (infrasonic--get-many "getAlbumList2"
+    (infrasonic--get-many client
+                          "getAlbumList2"
                           '(albumList2 album)
                           params
                           :album)))
 
 ;;; getRandomSongs
 
-(defun infrasonic-get-random-songs (&optional n)
+(defun infrasonic-get-random-songs (client &optional n)
   "Fetch N random tracks from the server.
 Returns a N length list of parsed JSON tracks.
 
 Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
-  (let ((n-tracks (or n infrasonic-search-max-results)))
-    (infrasonic--get-many "getRandomSongs"
+  (let ((n-tracks (or n infrasonic--default-search-max-results)))
+    (infrasonic--get-many client
+                          "getRandomSongs"
                           '(randomSongs song)
                           `(("size" . ,(number-to-string n-tracks)))
                           :track)))
 
 ;;; getSongsByGenre
 
-(defun infrasonic-get-songs-by-genre (genre &optional n)
+(defun infrasonic-get-songs-by-genre (client genre &optional n)
   "Get N songs in GENRE.
 Returns a list of songs."
-  (let ((n-tracks (or n infrasonic-search-max-results)))
-    (infrasonic--get-many "getSongsByGenre"
+  (let ((n-tracks (or n infrasonic--default-search-max-results)))
+    (infrasonic--get-many client
+                          "getSongsByGenre"
                           '(songsByGenre song)
                           `(("genre" . ,genre)
                             ("count" . ,(number-to-string n-tracks)))
@@ -488,10 +557,11 @@ Returns a list of songs."
 
 ;;; Playlists
 
-(defun infrasonic-get-playlists ()
+(defun infrasonic-get-playlists (client)
   "Fetch all of the user's playlists from the server.
 Returns an alist mapping playlist names to their IDs: ((name . id) ...)."
-  (when-let* ((items (infrasonic--get-many "getPlaylists"
+  (when-let* ((items (infrasonic--get-many client
+                                           "getPlaylists"
                                            '(playlists playlist)
                                            nil
                                            :playlist)))
@@ -500,26 +570,31 @@ Returns an alist mapping playlist names to their IDs: ((name . id) ...)."
                     (format "%s" (alist-get 'id item))))
             items)))
 
-(defun infrasonic-get-playlist-tracks (playlist-id)
+(defun infrasonic-get-playlist-tracks (client playlist-id)
   "Fetch all tracks in playlist with PLAYLIST-ID.
 Returns a list of parsed JSON tracks."
-  (infrasonic--get-many "getPlaylist"
+  (infrasonic--get-many client
+                        "getPlaylist"
                         '(playlist entry)
                         `(("id" . ,playlist-id))
                         :track))
 
 ;;; Star
 
-(defun infrasonic-get-starred-tracks ()
+(defun infrasonic-get-starred-tracks (client)
   "Fetch all starred tracks from the server.
 Returns a list of parsed JSON tracks."
-  (infrasonic--get-many "getStarred2" '(starred2 song) nil :track))
+  (infrasonic--get-many client
+                        "getStarred2"
+                        '(starred2 song)
+                        nil
+                        :track))
 
 ;;;; Setters
 
 ;;; Star
 
-(defun infrasonic-star (item-id star-p &optional callback)
+(defun infrasonic-star (client item-id star-p &optional callback errback)
   "Set ITEM-ID's (artist, album or track) star status according to STAR-P.
 Returns the parsed API response.
 
@@ -527,13 +602,14 @@ Send a request to the \"star\" or \"unstar\" Subsonic endpoints, star (when
 STAR-P is non-nil) or unstar ITEM-ID.
 CALLBACK is passed to `infrasonic-api-call' and is evaluated on the response
 data."
-  (infrasonic-api-call (if star-p "star" "unstar")
-                        `(("id" . ,item-id))
-                        callback))
+  (infrasonic-api-call client
+                       (if star-p "star" "unstar")
+                       `(("id" . ,item-id))
+                       callback errback))
 
 ;;; Bookmark
 
-(defun infrasonic-create-bookmark (track-id position &optional callback)
+(defun infrasonic-create-bookmark (client track-id position &optional callback errback)
   "Create or update a bookmark for track with TRACK-ID at POSITION.
 Returns the parsed API response, which will be an empty
 \"<subsonic-response>\" element on success.
@@ -541,36 +617,45 @@ Returns the parsed API response, which will be an empty
 Sends a request to the \"createBookmark\" endpoint. If CALLBACK is
 non-nil, request will be asynchronous and CALLBACK will be evaluated on
 the response data."
-  (infrasonic-api-call "createBookmark"
+  (infrasonic-api-call client
+                       "createBookmark"
                        `(("id" . ,track-id)
                          ("position" . ,(format "%s" position)))
-                       callback))
+                       callback errback))
 
-(defun infrasonic-delete-bookmark (track-id &optional callback)
+(defun infrasonic-delete-bookmark (client track-id &optional callback errback)
   "Delete the bookmark on track with TRACK-ID.
 Returns the parsed API response.
 
 Sends a request to the \"deleteBookmark\" endpoint. If CALLBACK is
 non-nil, request will be asynchronous and CALLBACK will be evaluated on
 the response data."
-  (infrasonic-api-call "deleteBookmark" `(("id" . ,track-id)) callback))
+  (infrasonic-api-call client
+                       "deleteBookmark"
+                       `(("id" . ,track-id))
+                       callback errback))
 
-(defun infrasonic-get-bookmarks (&optional callback)
+(defun infrasonic-get-bookmarks (client &optional callback errback)
   "Gets all bookmarks for the user.
 Returns the parsed API response.
 
 Sends a request to the \"getBookmarks\" endpoint. If CALLBACK is
 non-nil, request will be asynchronous and CALLBACK will be evaluated on
 the response data."
-  (infrasonic-api-call "getBookmarks" nil callback))
+  (infrasonic-api-call client
+                       "getBookmarks"
+                       nil
+                       callback errback))
 
 ;;; Scrobble
 
-(defun infrasonic-scrobble (track-id status)
+(defun infrasonic-scrobble (client track-id status &optional callback errback)
   "Scrobble STATUS for the track with TRACK-ID to the Subsonic API.
 Returns the parsed API response.
 
-STATUS may be either `:playing' or `:finished'."
+STATUS may be either `:playing' or `:finished'. If CALLBACK is
+non-nil, request will be asynchronous and CALLBACK will be evaluated on
+the response data."
   (let* ((submission (pcase status
                        (:playing "false")
                        (:finished "true")
@@ -578,26 +663,29 @@ STATUS may be either `:playing' or `:finished'."
                                                           status)))))
          (params `(("id" . ,track-id)
                    ("submission" . ,submission))))
-    (infrasonic-api-call "scrobble" params #'ignore)))
+    (infrasonic-api-call client
+                         "scrobble"
+                         params
+                         callback errback)))
 
 ;;; Search
 
-(defun infrasonic-search (query)
+(defun infrasonic-search (client query)
   "Search for QUERY at \"search3\" endpoint for artists, albums and tracks.
 Returns a flat list of items:
 \(((subsonic-type . :artist) (name . ...) ...)
- ((subsonic-type . :album) (name . ...) ...)
- ((subsonic-type . :track) (name . ...) ...)
- ((subsonic-type . :track) (name . ...) ...))
+  ((subsonic-type . :album) (name . ...) ...)
+  ((subsonic-type . :track) (name . ...) ...)
+  ((subsonic-type . :track) (name . ...) ...))
 
 Each item is a list with an added element `subsonic-type', and tracks
 have the `name' element added."
-  (let* ((max-results (number-to-string (/ infrasonic-search-max-results 3)))
+  (let* ((max-results (number-to-string (/ infrasonic--default-search-max-results 3)))
          (params `(("query" . ,query)
                    ("artistCount" . ,max-results)
                    ("albumCount" . ,max-results)
                    ("songCount" . ,max-results)))
-         (response (infrasonic-api-call "search3" params))
+         (response (infrasonic-api-call client "search3" params))
          (result (alist-get 'searchResult3 response))
          (artists (infrasonic--ensure-alist-list (alist-get 'artist result)))
          (albums (infrasonic--ensure-alist-list (alist-get 'album result)))
@@ -607,13 +695,14 @@ have the `name' element added."
      (infrasonic--standardise-list albums :album)
      (infrasonic--standardise-list tracks :track))))
 
-(defun infrasonic-search-tracks (query n)
+(defun infrasonic-search-tracks (client query n)
   "Search the server for N tracks matching QUERY.
 Returns a list of parsed JSON tracks.
 
 Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
-  (let ((n-tracks (or n infrasonic-search-max-results)))
-    (infrasonic--get-many "search3"
+  (let ((n-tracks (or n infrasonic--default-search-max-results)))
+    (infrasonic--get-many client
+                          "search3"
                           '(searchResult3 song)
                           `(("query" . ,query)
                             ("songCount" . ,(number-to-string n-tracks)))
@@ -621,25 +710,24 @@ Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
 
 ;;; Bulk get tracks
 
-(defun infrasonic-get-all-tracks (item-id level)
+(defun infrasonic-get-all-tracks (client item-id level)
   "Fetch all tracks under item (artist or album) associated with ITEM-ID.
 Returns a list of parsed JSON tracks.
 
 LEVEL determines what level of the hierarchy we are on:
 - :artist: fetches all albums, then all tracks by that artist.
 - :album: fetches all tracks on the album."
-  (let ((infrasonic--auth-params (infrasonic--get-auth-params)))
-    (pcase level
-      (:artist
-       (mapcan (lambda (album)
-                 (infrasonic-get-all-tracks (alist-get 'id album) :album))
-               (infrasonic-get-artist item-id)))
-      (:album
-       (infrasonic-get-album item-id)))))
+  (pcase level
+    (:artist
+     (mapcan (lambda (album)
+               (infrasonic-get-all-tracks client (alist-get 'id album) :album))
+             (infrasonic-get-artist client item-id)))
+    (:album
+     (infrasonic-get-album client item-id))))
 
 ;;;; Write requests
 
-(defun infrasonic-create-playlist (track-ids name)
+(defun infrasonic-create-playlist (client track-ids name &optional callback errback)
   "Create a playlist with NAME containing TRACK-IDS on the server.
 Returns the newly created playlist.
 
@@ -654,8 +742,10 @@ This function uses a POST request since large playlists can return HTTP error
                                     (list "songId" id))
                                   track-ids)))
          (body-str (url-build-query-string body-list nil t))
-         (playlist (infrasonic-api-call "createPlaylist"
-                                        nil nil
+         (playlist (infrasonic-api-call client
+                                        "createPlaylist"
+                                        nil
+                                        callback errback
                                         body-str)))
     (if playlist
         (progn
@@ -664,89 +754,132 @@ This function uses a POST request since large playlists can return HTTP error
           playlist)
       (signal 'infrasonic-error (list "Playlist was not created.")))))
 
-(defun infrasonic-delete-playlist (playlist-id)
-  "Delete a Subsonic playlist with PLAYLIST-ID."
-  (when (infrasonic-api-call "deletePlaylist"
-                              `(("id" . ,playlist-id)))
+(defun infrasonic-delete-playlist (client playlist-id &optional callback errback)
+  "Delete a Subsonic playlist with PLAYLIST-ID.
+
+Providing CALLBACK and ERRBACK will make the API call asynchronous."
+  (when (infrasonic-api-call client
+                             "deletePlaylist"
+                             `(("id" . ,playlist-id))
+                             callback errback)
     (message "Playlist deleted.")))
 
-;;; Art
+;;; Download
 
-(defun infrasonic-get-art-url (item-id &optional size)
+(defun infrasonic--get-art-url (client item-id &optional size)
   "Return the art URL for ITEM-ID.
 
 SIZE is the size of the cover art."
-  (let ((art-size (or size infrasonic-art-size)))
-    (infrasonic--build-url "getCoverArt"
-                           (append (infrasonic--get-auth-params)
+  (let ((art-size (or size infrasonic--default-art-size)))
+    (infrasonic--build-url client
+                           "getCoverArt"
+                           (append (infrasonic--get-auth-params client)
                                    `(("id" . ,item-id)
                                      ("size" . ,(number-to-string art-size)))))))
 
-(defun infrasonic-get-art (url target-file &optional callback)
-  "Download cover art at URL and write to TARGET-FILE.
+(defun infrasonic--download (client url target-file &optional callback errback queue)
+  "Asynchronously download music or art from URL to TARGET-FILE.
+Returns the `plz-queue' object when QUEUE is non-nil. Returns the `plz'
+process object otherwise.
+
+Downloads object to a temporary directory, and moves to TARGET-FILE
+after successful. On failure, the function cleans up the failed download.
+
+CALLBACK is called on the newly-downloaded filepath.
+
+ERRBACK is called on failure.
+
+If QUEUE is non-nil, add download to the QUEUE."
+  (let ((temp-file (make-temp-name (expand-file-name "infrasonic-part-"
+                                                     temporary-file-directory))))
+    (make-directory (file-name-directory (expand-file-name target-file)) t)
+    (infrasonic--request
+     queue
+     'get
+     url
+     :as `(file ,temp-file)
+     :then (lambda (_)
+             (condition-case err
+                 (progn
+                   (rename-file temp-file target-file t)
+                   (when callback (funcall callback target-file)))
+               (error
+                (when (file-exists-p temp-file) (delete-file temp-file))
+                (if errback
+                    (funcall errback err)
+                  (signal 'infrasonic-filesystem-error
+                          (list "Failed to finalise download" err target-file))))))
+     :else (lambda (err)
+             ;; Clean temp files
+             (when (file-exists-p temp-file) (delete-file temp-file))
+             (if errback
+                 (funcall errback err)
+               (signal 'infrasonic-api-error
+                       (list "Music download failed" err))))
+     ;; 5 minute timeout
+     :timeout (infrasonic--client-get client :timeout infrasonic--default-timeout))))
+
+(defun infrasonic-download-art (client item-id target-file &optional size callback errback queue)
+  "Download cover art for ITEM-ID and write to TARGET-FILE.
 Returns the path to the downloaded file.
+
+SIZE overrides `infrasonic--default-art-size'.
 
 CALLBACK is called when the art is downloaded. This may be used to
 display the image in TARGET-FILE somewhere in Emacs once it's finished
 downloading."
-  (plz 'get url
-    :as `(file ,target-file)
-    :then (or callback 'sync)
-    :else (lambda (err)
-            (signal 'infrasonic-api-error
-                    (list "Subsonic art download failed" err)))))
+  (let* ((url (infrasonic--get-art-url client item-id size))
+         (queue-limit (infrasonic--client-get client :queue-limit infrasonic--default-queue-limit))
+         (que (or queue (make-plz-queue :limit queue-limit))))
+    (infrasonic--download client url target-file callback errback que)
+    (unless queue (plz-run que))
+    que))
 
-;;; Download
+(defun infrasonic-download-music (client item-id out-dir &optional callback errback queue)
+  "Asynchronously download track with ITEM-ID to OUT-DIR.
+Returns a `plz-queue' object. Cancel with `plz-clear'.
 
-(defun infrasonic--download (item-id target-file &optional callback)
-  "Asynchronously download track with ITEM-ID to TARGET-FILE.
-Returns the `plz' process object.
+Downloads ITEM-ID to a temporary directory, and moves to OUT-DIR, with the
+title of the item as the filename. The filetype is determined by the filetype
+of the media on the OpenSubsonic server.
+after successful. On failure, the function cleans up the failed download.
 
-Downloads ITEM-ID to a temporary directory, and moves to TARGET-FILE
-after sucessful. On failure, the function cleans up the failed download.
-CALLBACK is called on the newly-downloaded filepath."
-  (let ((url (infrasonic--build-url "download"
-                                    (append (infrasonic--get-auth-params)
-                                            `(("id" . ,item-id)))))
-        (temp-file (make-temp-name (expand-file-name "infrasonic-part-"
-                                                     temporary-file-directory))))
-    (make-directory (file-name-directory (expand-file-name target-file)) t)
-    (plz 'get url
-      :as `(file ,temp-file)
-      :then (lambda (_)
-              (condition-case err
-                  (progn
-                    (rename-file temp-file target-file t)
-                    (when callback (funcall callback target-file)))
-                (error
-                 (when (file-exists-p temp-file) (delete-file temp-file))
-                 (signal 'infrasonic-filesystem-error
-                         (list "Failed to finalise download" err target-file)))))
-      :else (lambda (err)
-              ;; Clean temp files
-              (when (file-exists-p temp-file) (delete-file temp-file))
-              (signal 'infrasonic-api-error
-                      (list "Music download failed" err)))
-      ;; 5 minute timeout
-      :timeout 300)))
+CALLBACK is called on the newly-downloaded filepath.
 
-(defun infrasonic-download (item-id out-dir &optional callback)
-  "Asynchronously download track with ITEM-ID to TARGET-FILE.
-Returns the path to the downloaded file.
-
-Downloads ITEM-ID to a temporary directory, and moves to TARGET-FILE
-after sucessful. On failure, the function cleans up the failed download.
-CALLBACK is called on the newly-downloaded filepath."
-  (let* ((track-info (infrasonic-get-song item-id))
-         (suffix (alist-get 'suffix track-info))
-         (title (alist-get 'name track-info))
-         (filename (format "%s.%s" title suffix))
-         (full-path (expand-file-name filename out-dir)))
-    (infrasonic--download item-id full-path callback)))
+ERRBACK is passed to both `infrasonic-get-song-async' and
+`infrasonic--download'."
+  (let* ((auth-params (infrasonic--get-auth-params client))
+         (queue-limit (infrasonic--client-get client :queue-limit infrasonic--default-queue-limit))
+         (que (or queue (make-plz-queue :limit queue-limit))))
+    ;; to keep both getSong and download async, can just use callback
+    (infrasonic-api-call client
+                         "getSong"
+                         `(("id" . ,item-id))
+                         (lambda (resp)
+                           (let* ((track (infrasonic--standardise (alist-get 'song resp) :track))
+                                  (suffix (alist-get 'suffix track))
+                                  (title (infrasonic--safe-filename (alist-get 'name track)))
+                                  (filename (format "%s.%s" title suffix))
+                                  (full-path (expand-file-name filename out-dir))
+                                  (url (infrasonic--build-url client
+                                                              "download"
+                                                              (append auth-params
+                                                                      `(("id" . ,item-id))))))
+                             (infrasonic--download client
+                                                   url
+                                                   full-path
+                                                   callback
+                                                   errback
+                                                   que)))
+                         errback
+                         nil
+                         que)
+    (unless queue (plz-run que))
+    que))
 
 ;;; High-level stuff
 
-(defun infrasonic-children (id level)
+(defun infrasonic-children (client id level)
   "Fetch \"nodes\" for directory hierarchy LEVEL and ID.
 Returns a list of alists, each alist representing children of ID.
 
@@ -759,22 +892,10 @@ LEVEL determines the endpoint to use, and may be one of:
 - :album: Returns songs in an album using \"getAlbum\"."
   (let ((items
          (pcase level
-           (:artists (infrasonic-get-artists))
-           (:artist (infrasonic-get-artist id))
-           (:album (infrasonic-get-album id)))))
+           (:artists (infrasonic-get-artists client))
+           (:artist (infrasonic-get-artist client id))
+           (:album (infrasonic-get-album client id)))))
     items))
-
-(defun infrasonic-child (level)
-  "Determines the hierarchical level under LEVEL.
-Returns the keyword symbol for the next level.
-
-Hierarchy is: :artists -> :artist -> :album."
-  (pcase level
-    (:artists :artist)
-    (:artist :album)
-    (:album :track)
-    (_ :track)))
-
 
 (provide 'infrasonic)
 
