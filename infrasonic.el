@@ -36,9 +36,9 @@
 ;;
 ;; Configuration:
 ;;
-;; Set `infrasonic-url', `infrasonic-protocol' and `infrasonic-user-agent'.
-;; Credentials in an `auth-source' backend (e.g. ~/.authinfo) with \"machine\"
-;; matching `infrasonic-url'.
+;; Create a client with `infrasonic-make-client', and pass it to API functions.
+;; Credentials come from `auth-source'. :host should be the client's :url
+;; (subsonic host).
 ;;
 ;; Data:
 ;;
@@ -94,7 +94,7 @@
 
 Should be comprised of (default values):
 - :url                (no default)
-- :protocol           (no default)
+- :protocol           (\"https\")
 - :user-agent         (\"infrasonic\")
 - :api-version        (\"1.16.1\")
 - :queue-limit        (5)
