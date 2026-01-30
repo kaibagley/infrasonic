@@ -156,11 +156,14 @@ Returns a list of standardised ITEMs."
   "Determines the hierarchical level under LEVEL.
 Returns the keyword symbol for the next level.
 
-Hierarchy is: :artists -> :artist -> :album."
+Hierarchy is:
+:artists -> :artist -> :album    -> song
+                       :playlist -> song
+                       :genre    -> song"
   (pcase level
     (:artists :artist)
     (:artist :album)
-    (:album :song)
+    ((or :album :playlist :genre) :song)
     (_ :song)))
 
 (defun infrasonic--get-one (client endpoint key &optional params type)
