@@ -1,12 +1,12 @@
 ;;; infrasonic.el --- Subsonic server support for Emacs         -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025  Free Software Foundation, Inc.
+;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Kai Bagley <kaibagley@proton.mail>
 ;; Maintainer: Kai Bagley <kaibagley@proton.mail>
 ;; Keywords: multimedia
 ;; Package-Requires: ((emacs "30") (plz "0.9"))
-;; Version: 0.1.1
+;; Version: 0.2.0
 ;; URL: https://github.com/kaibagley/infrasonic
 
 ;; This program is free software; you can redistribute it and/or modify
