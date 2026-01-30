@@ -218,6 +218,8 @@ Below are some basic examples of the API functions
 | `infrasonic-get-all-songs`       | `getArtist` / `getAlbum`            | List of songs: `((song1) (song2) ...)`                   |
 | `infrasonic-create-playlist`     | `createPlaylist`                    | Playlist object: `((id . "1") (name . "foo") ...)`       |
 | `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                      |
+| `infrasonic-get-genres`          | `getGenres`                         | List of genres: `((genre1) (genre2) ...)`                |
+| `infrasonic-update-playlist`     | `updatePlaylist`                    | Parsed response                                          |
 | `infrasonic-get-art-url`         | Builds `getCoverArt` URL            | Complete URL string for image resource                   |
 | `infrasonic-download-art`        | `getCoverArt`                       | A `plz-queue`                                            |
 | `infrasonic-download-music`      | `getSong` and `download`            | A `plz-queue`                                            |
@@ -241,7 +243,7 @@ no plans to support podcasts or music videos.
 | getPlaylist                | `infrasonic-get-playlist-songs`  |
 | getPlaylists               | `infrasonic-get-playlists`       |
 | ping                       | `infrasonic-ping`                |
-| search                     |                                  |
+| search                     | Not planned                      |
 | stream                     | `infrasonic-get-stream-url`      |
 | *1.1.0*                    |                                  |
 | changePassword             | Not planned                      |
@@ -284,7 +286,7 @@ no plans to support podcasts or music videos.
 | search3                    | `infrasonic-search`              |
 | star                       | `infrasonic-star`                |
 | unstar                     | `infrasonic-star`                |
-| updatePlaylist             |                                  |
+| updatePlaylist             | `infrasonic-update-playlist`     |
 | *1.9.0*                    |                                  |
 | createBookmark             | `infrasonic-create-bookmark`     |
 | createPodcastChannel       | Maybe?                           |
@@ -293,7 +295,7 @@ no plans to support podcasts or music videos.
 | deletePodcastEpisode       | Maybe?                           |
 | downloadPodcastEpisode     | Maybe?                           |
 | getBookmarks               | `infrasonic-get-bookmarks`       |
-| getGenres                  |                                  |
+| getGenres                  | `infrasonic-get-genres`          |
 | getInternetRadioStations   | Not planned                      |
 | getSongsByGenre            | `infrasonic-get-songs-by-genre`  |
 | refreshPodcasts            | Maybe?                           |

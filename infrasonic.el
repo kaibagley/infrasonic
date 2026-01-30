@@ -31,7 +31,7 @@
 ;; - HTTP requests using `plz'.
 ;; - JSON parsing.
 ;; - Response standardisation: items are tagged with:
-;;   (subsonic-type . :artist/:album/:song/:playlist), and
+;;   (subsonic-type . :artist/:album/:song/:playlist/:genre), and
 ;;   (name . "...")
 ;;
 ;; Configuration:
@@ -358,10 +358,18 @@ Returns the parsed license response."
   (alist-get 'license (infrasonic-api-call client "getLicense")))
 
 ;;;; Browsing
-;; Not including: getMusicFolders, getIndexes, getMusicDirectory, getVideos,
-;; getVideoInfo, getArtistInfo, getAlbumInfo, getSimilarSongs
 
 ;;; getGenres
+
+(defun infrasonic-get-genres (client)
+  "Get a list of all genres from the server.
+Returns a list of genre alists, with (subsonic-type . :genre) appended
+to each genre."
+  (infrasonic--get-many client
+                        "getGenres"
+                        '(genres genre)
+                        nil
+                        :genre))
 
 ;;; getArtists
 
@@ -373,8 +381,8 @@ to each artist.
 The \"getArtists\" endpoint returns a list of lists, each sublist being
 artists under the alphabetical index:
 \(((name . \"#\") (artist . (<list of artists>)))
- ((name . \"a\") (artist . (<list of artists>)))
- ((name . \"b\") (artist . (<list of artists>)))
+  ((name . \"a\") (artist . (<list of artists>)))
+  ((name . \"b\") (artist . (<list of artists>)))
  ...)
 This function returns artists completely flattened:
 \((<artist>) (<artist>) ...)"
@@ -762,6 +770,34 @@ Providing CALLBACK and ERRBACK will make the API call asynchronous."
                              `(("id" . ,playlist-id))
                              callback errback)
     (message "Playlist deleted.")))
+
+(defun infrasonic-update-playlist (client playlist-id song-ids &optional name comment public-p callback errback)
+  "Update playlist with PLAYLIST-ID on the server.
+Returns the updated playlist.
+
+SONG-IDS is be a list of song IDs to include in the playlist.
+
+Optional arguments:
+- NAME is a string to set the playlist's name
+- COMMENT is a string to set the playlist's comment.
+- PUBLIC-P should the playlist be public?
+- CALLBACK and ERRBACK will make the API call asynchronous.
+
+This function uses a POST request since large playlists can return HTTP error
+414."
+  (let* ((body-list (cons `("id" ,playlist-id)
+                          (when name `("name" ,name))
+                          (when comment `("comment" ,comment))
+                          (when public-p `("public" "true"))
+                          (mapcar (lambda (id) (list "songId" id))
+                                  song-ids)))
+         (body-list-filt (delq nil body-list))
+         (body-str (url-build-query-string body-list-filt nil t)))
+    (infrasonic-api-call client
+                         "updatePlaylist"
+                         nil
+                         callback errback
+                         body-str)))
 
 ;;; Download
 
