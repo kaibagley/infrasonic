@@ -2,8 +2,9 @@
 
 - [Installation](#installation)
 - [Usage](#usage)
+- [Testing](#testing)
 - [Functions](#functions)
-- [API Implementation Status](#api implementation status)
+- [API Implementation Status](#api-implementation-status)
 
 `infrasonic` is an Emacs library for interacting with OpenSubsonic-compatible
 music servers such as Gonic, Navidrome, etc. It is designed for use in other
@@ -49,6 +50,24 @@ Clone the repository and add it to your load-path:
   :ensure '(infrasonic :repo "kaibagley/infrasonic")
   ...)
 ```
+
+## Testing
+
+I have included a few ERT tests to prevent myself from cooking things.
+
+### Requirements
+
+- ERT (built-in to Emacs >24.1)
+
+### Running Tests
+
+The `.dir-locals.el` file handles loading ERT and adding the project to your load path, to ensure that test files can find and load `infrasonic`.
+
+To run tests within Emacs:
+
+1. Open the test file: `C-x C-f test/infrasonic-test.el`
+2. Load the test file: `M-x load-file`
+3. Run all tests: `M-x ert-run-tests-interactively`
 
 ## Usage
 
