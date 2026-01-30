@@ -75,16 +75,16 @@ It can be done as follows:
 ;; (default values)
 (defvar my-music-client
   (infrasonic-make-client
-   :url                (no default)      ; FQDN for OpenSubsonic server
-   :protocol           (\"https\")       ; "http" or "https"
-   :user-agent         (\"infrasonic\")  ; Name of your player
+   :url                (no default)    ; FQDN for OpenSubsonic server
+   :protocol           ("https")       ; "http" or "https"
+   :user-agent         ("infrasonic")  ; Name of your player
    ;; Implemented OpenSubsonic REST API version.
    ;; See subsonic.org for the mapping between OpenSubsonic version and REST API version.
-   :api-version        (\"1.16.1\")
-   :queue-limit        (5)               ; Limit of concurrent downloads of art and music
-   :timeout            (300)             ; HTTP request timeout for downloads of art and music
-   :art-size           (64)              ; Edge size in pixels to dowload cover art
-   :search-max-results (200))            ; Max results to return in query searches
+   :api-version        ("1.16.1")
+   :queue-limit        (5)             ; Limit of concurrent downloads of art and music
+   :timeout            (300)           ; HTTP request timeout for downloads of art and music
+   :art-size           (64)            ; Edge size in pixels to dowload cover art
+   :search-max-results (200))          ; Max results to return in query searches
 ```
 
 3. Low-level Functions
