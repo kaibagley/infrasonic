@@ -187,7 +187,7 @@ Some examples:
 | `infrasonic-search`              | `search3`                           | Flat list of results: `((artist1) (album1) (track1) ...)` |
 | `infrasonic-search-tracks`       | `search3`                           | List of tracks: `((track1) (track2) ...)`                 |
 | `infrasonic-get-all-tracks`      | `getArtist` / `getAlbum`            | List of tracks: `((track1) (track2) ...)`                 |
-| `infrasonic-create-playlist`     | `createPlaylist`                    | Playlist object: `((id . ""1"") (name . ""foo"") ...)`    |
+| `infrasonic-create-playlist`     | `createPlaylist`                    | Playlist object: `((id . "1") (name . "foo") ...)`        |
 | `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                       |
 | `infrasonic-get-art-url`         | Builds `getCoverArt` URL            | Complete URL string for image resource                    |
 | `infrasonic-get-art`             | `getCoverArt`                       | File path to downloaded image                             |
@@ -201,6 +201,7 @@ will likely not be implemented). `infrasonic` will only support music and has
 no plans to support podcasts or music videos.
 
 <details><summary><b>Click to expand the API implementation checklist</b></summary>
+<<<<<<< Updated upstream
 ### 1.0.0
 - [x] download
 - [x] getCoverArt
@@ -293,4 +294,98 @@ no plans to support podcasts or music videos.
 - [ ] createInternetRadioStation
 - [ ] deleteInternetRadioStation
 - [ ] updateInternetRadioStation
+=======
+| *1.0.0*                    |                                  |
+| download                   |                                  |
+| getCoverArt                | `infrasonic-get-art(-url)`       |
+| getIndexes                 |                                  |
+| getLicense                 |                                  |
+| getMusicDirectory          |                                  |
+| getMusicFolders            |                                  |
+| getNowPlaying              |                                  |
+| getPlaylist                | `infrasonic-get-playlist-tracks` |
+| getPlaylists               | `infrasonic-get-playlists`       |
+| ping                       | `infrasonic-ping-server`         |
+| search                     |                                  |
+| stream                     | `infrasonic-get-stream-url`      |
+| *1.1.0*                    |                                  |
+| changePassword             | Not planned                      |
+| createUser                 | Not planned                      |
+| *1.2.0*                    |                                  |
+| addChatMessage             | Not planned                      |
+| createPlaylist             | `infrasonic-create-playlist`     |
+| deletePlaylist             | `infrasonic-delete-playlist`     |
+| getAlbumList               | Not planned                      |
+| getChatMessages            | Not planned                      |
+| getLyrics                  |                                  |
+| getRandomSongs             | `infrasonic-get-random-tracks`   |
+| jukeboxControl             | Not planned                      |
+| *1.3.0*                    |                                  |
+| deleteUser                 | Not planned                      |
+| getUser                    | Not planned                      |
+| *1.4.0*                    |                                  |
+| search2                    | Not planned                      |
+| *1.5.0*                    |                                  |
+| scrobble                   | `infrasonic-scrobble`            |
+| *1.6.0*                    |                                  |
+| createShare                | Not planned                      |
+| deleteShare                | Not planned                      |
+| getPodcasts                |                                  |
+| getShares                  | Not planned                      |
+| setRating                  |                                  |
+| updateShare                | Not planned                      |
+| *1.8.0*                    |                                  |
+| getAlbum                   | `infrasonic-get-album`           |
+| getAlbumList2              |                                  |
+| getArtist                  | `infrasonic-get-artist`          |
+| getArtists                 | `infrasonic-get-artists`         |
+| getAvatar                  |                                  |
+| getSong                    |                                  |
+| getStarred                 | Not planned                      |
+| getStarred2                | `infrasonic-get-starred-tracks`  |
+| getUsers                   | Not planned                      |
+| getVideos                  | Not planned                      |
+| hls                        |                                  |
+| search3                    | `infrasonic-search`              |
+| star                       | `infrasonic-star`                |
+| unstar                     | `infrasonic-star`                |
+| updatePlaylist             |                                  |
+| *1.9.0*                    |                                  |
+| createBookmark             |                                  |
+| createPodcastChannel       | Maybe?                           |
+| deleteBookmark             |                                  |
+| deletePodcastChannel       | Maybe?                           |
+| deletePodcastEpisode       | Maybe?                           |
+| downloadPodcastEpisode     | Maybe?                           |
+| getBookmarks               |                                  |
+| getGenres                  |                                  |
+| getInternetRadioStations   | Not planned                      |
+| getSongsByGenre            |                                  |
+| refreshPodcasts            | Maybe?                           |
+| *1.10.1*                   |                                  |
+| updateUser                 | Not planned                      |
+| *1.11.0*                   |                                  |
+| getArtistInfo              |                                  |
+| getArtistInfo2             |                                  |
+| getSimilarSongs            |                                  |
+| getSimilarSongs2           |                                  |
+| *1.12.0                    |                                  |
+| getPlayQueue               |                                  |
+| savePlayQueue              |                                  |
+| *1.13.0*                   |                                  |
+| getNewestPodcasts          | Maybe                            |
+| getTopSongs                |                                  |
+| *1.14.0*                   |                                  |
+| getAlbumInfo               | Not planned                      |
+| getAlbumInfo2              |                                  |
+| getCaptions                | Not planned                      |
+| getVideoInfo               | Not planned                      |
+| *1.15.0*                   |                                  |
+| getScanStatus              | Not planned                      |
+| startScan                  | Not planned                      |
+| *1.16.0*                   |                                  |
+| createInternetRadioStation | Not planned                      |
+| deleteInternetRadioStation | Not planned                      |
+| updateInternetRadioStation | Not planned                      |
+>>>>>>> Stashed changes
 </details>
