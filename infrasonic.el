@@ -2,8 +2,8 @@
 
 ;; Copyright (C) 2026  Free Software Foundation, Inc.
 
-;; Author: Kai Bagley <kaibagley@proton.mail>
-;; Maintainer: Kai Bagley <kaibagley@proton.mail>
+;; Author: Kai Bagley <kaibagley+github@proton.mail>
+;; Maintainer: Kai Bagley <kaibagley+github@proton.mail>
 ;; Keywords: multimedia
 ;; Package-Requires: ((emacs "30") (plz "0.9"))
 ;; Version: 0.2.0
