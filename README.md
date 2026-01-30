@@ -6,15 +6,16 @@
 - [API Implementation Status](#api implementation status)
 
 `infrasonic` is an Emacs library for interacting with OpenSubsonic-compatible
-music servers such as Gonic, Navidrome, etc.
+music servers such as Gonic, Navidrome, etc. It is designed for use in other
+Emacs packages wishing to implement OpenSubsonic compatibility.
 
 It handles authentication, request signing, and JSON parsing. Authentication is
 handled with `auth-source` using the OpenSubsonic token/salt authentication method.
 
-`infrasonic` also ensures consistency between tracks, albums and artists by
-adding a "name" element to tracks. A "subsonic-type" element is added too,
-which indicates if the item is a track, album or artist. Other than this, the
-API request is untouched (other than the JSON -> list parsing).
+`infrasonic` also ensures consistency between songs, albums and artists by
+adding a "name" element to songs. A "subsonic-type" element is added too,
+which indicates if the item is a song, album or artist. Other than this, the
+API request is untouched (other than the JSON -> alist parsing).
 
 ## Requirements
 - Emacs 30.1 or higher for built-in JSON support.
@@ -22,23 +23,27 @@ API request is untouched (other than the JSON -> list parsing).
 - An OpenSubsonic-compatible server.
 
 ## Installation
+
 Hopefully at some point, this package will be available on a package
 repository. For now:
 
 Manual:
 Clone the repository and add it to your load-path:
+
 ```emacs-lisp
 (add-to-list 'load-path "/path/to/infrasonic_repo")
 (require 'infrasonic)
 ```
 
 `straight`:
+
 ```emacs-lisp
 (straight-use-package
  '(infrasonic :type git :host github :repo "kaibagley/infrasonic"))
 ```
 
 `elpaca`
+
 ```emacs-lisp
 (use-package infrasonic
   :ensure '(infrasonic :repo "kaibagley/infrasonic")
@@ -46,53 +51,74 @@ Clone the repository and add it to your load-path:
 ```
 
 ## Usage
-1. Server Settings
 
-Set your server's url and protocol:
-```emacs-lisp
-(setq infrasonic-url "music.example.com"  ; or "192.168.1.50:4533"
-      infrasonic-protocol "https"         ; "http" or "https"
-      infrasonic-user-agent "infrasonic")
+`infrasonic` requires you to create a *client*, which is simply a plist
+containing a few important details. The client is passed as the first argument
+to the `infrasonic` API functions, allowing multiple clients to be used at
+once.
+
+1. Authentication
+
+`infrasonic` uses `auth-source` for secrets. Add a line to your `~/.authinfo`
+containing your OpenSubsonic server's URL.
+
+```text
+machine music.example.com login my_username password my_secret_password
 ```
 
-2. Authentication
+2. Client
 
-`infrasonic` uses Emacs' built-in `auth-source` library to handle credentials.
-Add a line to your ~/.authinfo file matching your infrasonic-url.
+In your package, a client must be created for each server you wish to access.
+It can be done as follows:
 
-```txt
-machine music.example.com login my_username password my_secret_password
+```emacs-lisp
+;; (default values)
+(defvar my-music-client
+  (infrasonic-make-client
+   :url                (no default)      ; FQDN for OpenSubsonic server
+   :protocol           (\"https\")       ; "http" or "https"
+   :user-agent         (\"infrasonic\")  ; Name of your player
+   ;; Implemented OpenSubsonic REST API version.
+   ;; See subsonic.org for the mapping between OpenSubsonic version and REST API version.
+   :api-version        (\"1.16.1\")
+   :queue-limit        (5)               ; Limit of concurrent downloads of art and music
+   :timeout            (300)             ; HTTP request timeout for downloads of art and music
+   :art-size           (64)              ; Edge size in pixels to dowload cover art
+   :search-max-results (200))            ; Max results to return in query searches
 ```
 
 3. Low-level Functions
 
-Test connection using `M-x infrasonic-ping`.
+Below are some basic examples of the API functions
 
-`infrasonic` is designed to be used as a backend for other multimedia packages
-(like listen.el).
+```emacs-lisp
+;; Test connection
+(infrasonic-ping my-music-client)
 
-Some examples:
-
-``` emacs-lisp
-;; Search for a query (returns artists, albums, and tracks)
-(infrasonic-search "Daft Punk")
+;; Search for a query (returns artists, albums, and songs)
+(infrasonic-search my-music-client "Bilmuri")
 
 ;; Get all playlists
-(infrasonic-get-playlists)
+(infrasonic-get-playlists my-music-client)
 
-;; Get 50 random tracks
-(infrasonic-get-random-tracks 50)
+;; Get 50 random songs
+(infrasonic-get-random-songs my-music-client 50)
 
-;; Scrobble a track (ID "123") as "Now Playing"
-(infrasonic-scrobble "123" :playing)
+;; Scrobble a song (ID "id-123") as "Now Playing"
+(infrasonic-scrobble my-music-client "id-123" :playing)
 
-;; Star a track
-(infrasonic-star "123" t)
+;; Star a song
+(infrasonic-star my-music-client "id-123" t)
 
-;; API call with callback (callback enables async requests)
-(infrasonic-api-call "ping" nil
-                     (lambda (data)
-                     (message "Server says: %s" (alist-get 'status data))))
+;; API call with callback and errback (callback enables async requests)
+;; Most functions support callbacks for asynchronous execution
+(infrasonic-api-call my-music-client
+                     "ping"         ; Endpoint
+                     nil            ; Parameters
+                     (lambda (resp) ; Callback function
+                      (message "Server says: %s" (alist-get 'status resp)))
+                     (lambda (err)  ; Error callback function
+                      (user-error "Server errored: %S" err)))
 ```
 
 4. High-level functions
@@ -100,16 +126,19 @@ Some examples:
 `infrasonic` also provides some higher-level functions:
 
 ```emacs-lisp
-;; Get all tracks under an artist or album
-(infrasonic-get-all-tracks "123" :artist)
+;; Get all songs recursively under an artist or album
+(infrasonic-get-all-songs my-music-client "id-123" :artist)
 ```
 
 ## Functions:
 
-<details><summary><b>(album), (artist), (track), etc. refer to the full parsed list construct.</b></summary>
+<details><summary><b>Click for a full data structure example</b></summary>
+
+(album), (artist), (song), etc. refer to the full parsed list construct.
 
 ``` emacs-lisp
-;; This is the parsed JSON returned from `infrasonic-search' to a gonic server.
+;; This is an example of the full parsed JSON returned from `infrasonic-search'
+;; to my gonic server.
 (((subsonic-type . :artist)
   (id . "ar-461")
   (name . "The Human Abstract")
@@ -133,7 +162,7 @@ Some examples:
   (year . 2016)
   (isCompilation)
   (releaseTypes "Album"))
- ((subsonic-type . :track)
+ ((subsonic-type . :song)
   (name . "The Abstract of a Planet in Resolve (instrumental)")
   (id . "tr-7252")
   (album . "To Speak, To Listen")
@@ -168,31 +197,31 @@ Some examples:
 
 </details>
 
-| Function name                    | API endpoint                        | Returns                                                   |
-|----------------------------------|-------------------------------------|-----------------------------------------------------------|
-| `infrasonic-get-stream-url`      | `stream`                            | Complete URL string for streaming                         |
-| `infrasonic-ping`                | `ping`                              | `nil` (Displays success/failure message)                  |
-| `infrasonic-get-artists`         | `getArtists`                        | Flat list of artists: `((artist1) (artist2) ...)`         |
-| `infrasonic-get-artist`          | `getArtist`                         | Flat list of albums: `((album1) (album2) ...)`            |
-| `infrasonic-get-album`           | `getAlbum`                          | Flat list of tracks: `((track1) (track2) ...)`            |
-| `infrasonic-get-playlists`       | `getPlaylists`                      | Alist of names/IDs: `((name . id) ...)`                   |
-| `infrasonic-get-playlist-tracks` | `getPlaylist`                       | List of tracks: `((track1) (track2) ...)`                 |
-| `infrasonic-get-starred-tracks`  | `getStarred2`                       | List of tracks: `((track1) (track2) ...)`                 |
-| `infrasonic-star`                | `star` / `unstar`                   | Parsed response                                           |
-| `infrasonic-create-bookmark`     | `createBookmark`                    | Parsed response                                           |
-| `infrasonic-delete-bookmark`     | `deleteBookmark`                    | Parsed response                                           |
-| `infrasonic-get-bookmarks`       | `getBookmarks`                      | Parsed response                                           |
-| `infrasonic-scrobble`            | `scrobble`                          | Parsed response                                           |
-| `infrasonic-get-random-tracks`   | `getRandomSongs`                    | List of n tracks: `((track1) ...)`                        |
-| `infrasonic-search`              | `search3`                           | Flat list of results: `((artist1) (album1) (track1) ...)` |
-| `infrasonic-search-tracks`       | `search3`                           | List of tracks: `((track1) (track2) ...)`                 |
-| `infrasonic-get-all-tracks`      | `getArtist` / `getAlbum`            | List of tracks: `((track1) (track2) ...)`                 |
-| `infrasonic-create-playlist`     | `createPlaylist`                    | Playlist object: `((id . "1") (name . "foo") ...)`        |
-| `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                       |
-| `infrasonic-get-art-url`         | Builds `getCoverArt` URL            | Complete URL string for image resource                    |
-| `infrasonic-get-art`             | `getCoverArt`                       | File path to downloaded image                             |
-| `infrasonic-download`            | `download`                          | File path to downloaded music                             |
-| `infrasonic-children`            | `getArtists`/`getArtist`/`getAlbum` | List of items (artists, albums, or tracks)                |
+| Function name                    | API endpoint                        | Returns                                                  |
+|----------------------------------|-------------------------------------|----------------------------------------------------------|
+| `infrasonic-get-stream-url`      | `stream`                            | Complete URL string for streaming                        |
+| `infrasonic-ping`                | `ping`                              | `nil` (Displays success/failure message)                 |
+| `infrasonic-get-artists`         | `getArtists`                        | Flat list of artists: `((artist1) (artist2) ...)`        |
+| `infrasonic-get-artist`          | `getArtist`                         | Flat list of albums: `((album1) (album2) ...)`           |
+| `infrasonic-get-album`           | `getAlbum`                          | Flat list of songs: `((song1) (song2) ...)`              |
+| `infrasonic-get-playlists`       | `getPlaylists`                      | Alist of names/IDs: `((name . id) ...)`                  |
+| `infrasonic-get-playlist-songs`  | `getPlaylist`                       | List of songs: `((song1) (song2) ...)`                   |
+| `infrasonic-get-starred-songs`   | `getStarred2`                       | List of songs: `((song1) (song2) ...)`                   |
+| `infrasonic-star`                | `star` / `unstar`                   | Parsed response                                          |
+| `infrasonic-create-bookmark`     | `createBookmark`                    | Parsed response                                          |
+| `infrasonic-delete-bookmark`     | `deleteBookmark`                    | Parsed response                                          |
+| `infrasonic-get-bookmarks`       | `getBookmarks`                      | Parsed response                                          |
+| `infrasonic-scrobble`            | `scrobble`                          | Parsed response                                          |
+| `infrasonic-get-random-songs`    | `getRandomSongs`                    | List of n songs: `((song1) ...)`                         |
+| `infrasonic-search`              | `search3`                           | Flat list of results: `((artist1) (album1) (song1) ...)` |
+| `infrasonic-search-songs`        | `search3`                           | List of songs: `((song1) (song2) ...)`                   |
+| `infrasonic-get-all-songs`       | `getArtist` / `getAlbum`            | List of songs: `((song1) (song2) ...)`                   |
+| `infrasonic-create-playlist`     | `createPlaylist`                    | Playlist object: `((id . "1") (name . "foo") ...)`       |
+| `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                      |
+| `infrasonic-get-art-url`         | Builds `getCoverArt` URL            | Complete URL string for image resource                   |
+| `infrasonic-download-art`        | `getCoverArt`                       | A `plz-queue`                                            |
+| `infrasonic-download-music`      | `getSong` and `download`            | A `plz-queue`                                            |
+| `infrasonic-children`            | `getArtists`/`getArtist`/`getAlbum` | List of items (artists, albums, or songs)                |
 
 ## API Implementation Status
 
@@ -202,16 +231,16 @@ no plans to support podcasts or music videos.
 
 <details><summary><b>Click to expand the API implementation checklist</b></summary>
 | *1.0.0*                    |                                  |
-| download                   |                                  |
+| download                   | `infrasonic-download-music`      |
 | getCoverArt                | `infrasonic-get-art(-url)`       |
 | getIndexes                 |                                  |
-| getLicense                 |                                  |
+| getLicense                 | `infrasonic-get-license`         |
 | getMusicDirectory          |                                  |
 | getMusicFolders            |                                  |
 | getNowPlaying              |                                  |
-| getPlaylist                | `infrasonic-get-playlist-tracks` |
+| getPlaylist                | `infrasonic-get-playlist-songs`  |
 | getPlaylists               | `infrasonic-get-playlists`       |
-| ping                       | `infrasonic-ping-server`         |
+| ping                       | `infrasonic-ping`                |
 | search                     |                                  |
 | stream                     | `infrasonic-get-stream-url`      |
 | *1.1.0*                    |                                  |
@@ -224,7 +253,7 @@ no plans to support podcasts or music videos.
 | getAlbumList               | Not planned                      |
 | getChatMessages            | Not planned                      |
 | getLyrics                  |                                  |
-| getRandomSongs             | `infrasonic-get-random-tracks`   |
+| getRandomSongs             | `infrasonic-get-random-songs`    |
 | jukeboxControl             | Not planned                      |
 | *1.3.0*                    |                                  |
 | deleteUser                 | Not planned                      |
@@ -246,9 +275,9 @@ no plans to support podcasts or music videos.
 | getArtist                  | `infrasonic-get-artist`          |
 | getArtists                 | `infrasonic-get-artists`         |
 | getAvatar                  |                                  |
-| getSong                    |                                  |
+| getSong                    | `infrasonic-get-song`            |
 | getStarred                 | Not planned                      |
-| getStarred2                | `infrasonic-get-starred-tracks`  |
+| getStarred2                | `infrasonic-get-starred-songs`   |
 | getUsers                   | Not planned                      |
 | getVideos                  | Not planned                      |
 | hls                        |                                  |
@@ -257,16 +286,16 @@ no plans to support podcasts or music videos.
 | unstar                     | `infrasonic-star`                |
 | updatePlaylist             |                                  |
 | *1.9.0*                    |                                  |
-| createBookmark             |                                  |
+| createBookmark             | `infrasonic-create-bookmark`     |
 | createPodcastChannel       | Maybe?                           |
-| deleteBookmark             |                                  |
+| deleteBookmark             | `infrasonic-delete-bookmark`     |
 | deletePodcastChannel       | Maybe?                           |
 | deletePodcastEpisode       | Maybe?                           |
 | downloadPodcastEpisode     | Maybe?                           |
-| getBookmarks               |                                  |
+| getBookmarks               | `infrasonic-get-bookmarks`       |
 | getGenres                  |                                  |
 | getInternetRadioStations   | Not planned                      |
-| getSongsByGenre            |                                  |
+| getSongsByGenre            | `infrasonic-get-songs-by-genre`  |
 | refreshPodcasts            | Maybe?                           |
 | *1.10.1*                   |                                  |
 | updateUser                 | Not planned                      |
@@ -274,16 +303,16 @@ no plans to support podcasts or music videos.
 | getArtistInfo              |                                  |
 | getArtistInfo2             |                                  |
 | getSimilarSongs            |                                  |
-| getSimilarSongs2           |                                  |
+| getSimilarSongs2           | `infrasonic-get-similar-songs`   |
 | *1.12.0                    |                                  |
 | getPlayQueue               |                                  |
 | savePlayQueue              |                                  |
 | *1.13.0*                   |                                  |
 | getNewestPodcasts          | Maybe                            |
-| getTopSongs                |                                  |
+| getTopSongs                | `infrasonic-get-top-songs`       |
 | *1.14.0*                   |                                  |
 | getAlbumInfo               | Not planned                      |
-| getAlbumInfo2              |                                  |
+| getAlbumInfo2              | `infrasonic-get-album-info`      |
 | getCaptions                | Not planned                      |
 | getVideoInfo               | Not planned                      |
 | *1.15.0*                   |                                  |
