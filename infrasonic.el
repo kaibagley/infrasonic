@@ -52,7 +52,7 @@
 ;; Functions signal `infrasonic-error' for local errors and
 ;; `infrasonic-api-error' for API failures.
 
-;; TODO: Fix documentation for new workflow
+;; TODO: either use cl-defun, or move to using &rest plist for defun
 ;; TODO: reimplement auth caching with the new client stuff
 
 ;;; Code:
@@ -820,7 +820,7 @@ If QUEUE is non-nil, add download to the QUEUE."
 
 (defun infrasonic-download-art (client item-id target-file &optional size callback errback queue)
   "Download cover art for ITEM-ID and write to TARGET-FILE.
-Returns the path to the downloaded file.
+Returns a `plz-queue' object. Cancel with `plz-clear'.
 
 SIZE overrides `infrasonic--default-art-size'.
 
