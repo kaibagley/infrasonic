@@ -377,54 +377,78 @@ to each genre."
 ;;; getArtists
 
 (defun infrasonic-get-artists (client)
-  "Get a list of artists.
-Returns a flat list of artists, with (subsonic-type . :artist) appended
-to each artist.
-
-The \"getArtists\" endpoint returns a list of lists, each sublist being
-artists under the alphabetical index:
+  "Get artists index.
+Returns an artists alist, which is organised by first letter:
+Example:
 \(((name . \"#\") (artist . (<list of artists>)))
   ((name . \"a\") (artist . (<list of artists>)))
   ((name . \"b\") (artist . (<list of artists>)))
  ...)
-This function returns artists completely flattened:
-\((<artist>) (<artist>) ...)"
+
+Each artist is standardised as :artist."
   ;; Dont tag with :artist yet, since these are indices
-  (let ((indexes (infrasonic--get-many client "getArtists" '(artists index))))
+  (let ((indexes (or (infrasonic--get-one client
+                                          "getArtists"
+                                          'artists)
+                     (signal 'infrasonic-api-error
+                             (list "Missing getArtists response")))))
     ;; flatten the indexes -> list of artist-lists
+    (setf (alist-get 'index indexes)
+          (mapcar (lambda (index)
+                    (setf (alist-get 'artist index)
+                          (infrasonic--standardise-list
+                           (infrasonic--ensure-alist-list (alist-get 'artist index))
+                           :artist))
+                    index)
+                  (infrasonic--ensure-alist-list (alist-get 'index indexes))))
+    indexes))
+
+(defun infrasonic-get-artists-flat (client)
+  "Return a flat list of artists standardised with :artist."
+  (let ((indexes (alist-get 'index (infrasonic-get-artists client))))
     (mapcan (lambda (index)
-              (let ((artists (infrasonic--ensure-alist-list (alist-get 'artist index))))
-                (infrasonic--standardise-list artists :artist)))
+              (alist-get 'artist index))
             indexes)))
 
 ;;; getArtist
 
 (defun infrasonic-get-artist (client artist-id)
-  "Get a list of albums for artist with ARTIST-ID.
-Returns a flat list of albums by artist with ARTIST-ID, with (subsonic-type .
-:album) appended to each album.
+  "Get information and albums for artist with ARTIST-ID.
+Returns an artist alist standardised as :artist.
 
-The \"getArtist\" endpoint returns a list of albums."
-  (infrasonic--get-many client
-                        "getArtist"
-                        '(artist album)
-                        `(("id" . ,artist-id))
-                        :album))
+Each album within the 'album element is standardised as :album."
+  (let ((artist (or (infrasonic--get-one client
+                                         "getArtist"
+                                         'artist
+                                         `(("id" . ,artist-id))
+                                         :artist)
+                    (signal 'infrasonic-api-error
+                            (list "Artist not found" artist-id)))))
+    (setf (alist-get 'album artist)
+          (infrasonic--standardise-list
+           (infrasonic--ensure-alist-list (alist-get 'album artist))
+           :album))
+    artist))
 
 ;;; getAlbum
 
 (defun infrasonic-get-album (client album-id)
   "Get a list of songs for album with ALBUM-ID.
-Returns a flat list of songs in album with ALBUM-ID, with (subsonic-type
-. :song) and (name . <song name>) appended to each song.
+Returns an album alist standardised as :album.
 
-The \"getAlbum\" endpoint returns a list of songs. The songs do not
-contain a name element like albums and artists do, so we add it here."
-  (infrasonic--get-many client
-                        "getAlbum"
-                        '(album song)
-                        `(("id" . ,album-id))
-                        :song))
+Each song within the 'song element is standardised as :song."
+  (let ((album (or (infrasonic--get-one client
+                                        "getAlbum"
+                                        'album
+                                        `(("id" . ,album-id))
+                                        :album)
+                   (signal 'infrasonic-api-error
+                           (list "Album not found" album-id)))))
+    (setf (alist-get 'song album)
+          (infrasonic--standardise-list
+           (infrasonic--ensure-alist-list (alist-get 'song album))
+           :song))
+    album))
 
 ;;; getSong
 
@@ -488,13 +512,20 @@ Returns a list of songs."
 ;;; getTopSongs
 
 (defun infrasonic-get-top-songs (client artist-id &optional n)
-  "Get ARTIST-ID's N top songs.
-Returns a list of songs."
-  (let ((n-songs (or n infrasonic--default-search-max-results)))
+  "Get ARTIST-ID's N top songs from last.fm.
+Returns a list of songs.
+
+Note that the endpoint requires the artist's name, not the ID. This
+function uses ARTIST-ID for convenience, and performs a lookup to
+convert it to artist name for the request."
+  (let ((artist-name (alist-get 'name (infrasonic-get-artist client artist-id)))
+        (n-songs (or n infrasonic--default-search-max-results)))
+    (unless (and (stringp artist-name) (not (string-empty-p artist-name)))
+      (signal 'infrasonic-error (list "Artist name is missing" artist-id)))
     (infrasonic--get-many client
                           "getTopSongs"
                           '(topSongs song)
-                          `(("id" . ,artist-id)
+                          `(("artist" . ,artist-name)
                             ("count" . ,(number-to-string n-songs)))
                           :song)))
 
@@ -742,11 +773,12 @@ LEVEL determines what level of the hierarchy we are on:
 - :album: fetches all songs on the album."
   (pcase level
     (:artist
-     (mapcan (lambda (album)
-               (infrasonic-get-all-songs client (alist-get 'id album) :album))
-             (infrasonic-get-artist client item-id)))
+     (let ((albums (alist-get 'album (infrasonic-get-artist client item-id))))
+       (mapcan (lambda (album)
+                 (infrasonic-get-all-songs client (alist-get 'id album) :album))
+               albums)))
     (:album
-     (infrasonic-get-album client item-id))))
+     (alist-get 'song (infrasonic-get-album client item-id)))))
 
 ;;;; Write requests
 
@@ -943,9 +975,9 @@ LEVEL determines the endpoint to use, and may be one of:
 - :album: Returns songs in an album using \"getAlbum\"."
   (let ((items
          (pcase level
-           (:artists (infrasonic-get-artists client))
-           (:artist (infrasonic-get-artist client id))
-           (:album (infrasonic-get-album client id)))))
+           (:artists (infrasonic-get-artists-flat client))
+           (:artist (alist-get 'album (infrasonic-get-artist client id)))
+           (:album (alist-get 'song (infrasonic-get-album client id))))))
     items))
 
 (provide 'infrasonic)
