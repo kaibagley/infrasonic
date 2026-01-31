@@ -499,7 +499,6 @@ Returns a list of songs."
                           :song)))
 
 ;;;; Album/song lists
-;; Not including: getAlbumList, getStarred
 
 ;;; getAlbumList2
 
@@ -564,6 +563,20 @@ Returns a list of songs."
                           `(("genre" . ,genre)
                             ("count" . ,(number-to-string n-songs)))
                           :song)))
+
+;;;; getNowPlaying
+
+(defun infrasonic-get-now-playing (client)
+  "Get the currently playing songs from all users.
+Returns a list of alists:
+(((username . \"username1\") (name . \"song name\") ...)
+ ((username . \"username2\") ...)
+ ...)"
+  (infrasonic--get-many client
+                        "getNowPlaying"
+                        '(nowPlaying entry)
+                        nil
+                        :song))
 
 ;;; Playlists
 

@@ -251,13 +251,14 @@ will likely not be implemented). `infrasonic` will only support music and has
 no plans to support podcasts or music videos.
 
 <details><summary><b>Click to expand the API implementation checklist</b></summary>
+
 | *1.0.0*                    |                                  |
 | download                   | `infrasonic-download-music`      |
 | getCoverArt                | `infrasonic-get-art(-url)`       |
-| getIndexes                 |                                  |
+| getIndexes                 | Not planned                      |
 | getLicense                 | `infrasonic-get-license`         |
-| getMusicDirectory          |                                  |
-| getMusicFolders            |                                  |
+| getMusicDirectory          | Not planned                      |
+| getMusicFolders            | Not planned                      |
 | getNowPlaying              |                                  |
 | getPlaylist                | `infrasonic-get-playlist-songs`  |
 | getPlaylists               | `infrasonic-get-playlists`       |
