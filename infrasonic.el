@@ -54,6 +54,9 @@
 
 ;; TODO: either use cl-defun, or move to using &rest plist for defun
 ;; TODO: reimplement auth caching with the new client stuff
+;; TODO: changelog file
+;; TODO: contributing guide
+;; TODO: more comprehensive tests. perhaps use ai to generate because boring
 
 ;;; Code:
 
