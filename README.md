@@ -2,7 +2,7 @@
 
 - [Installation](#installation)
 - [Usage](#usage)
-- [Testing](#testing)
+- [Developing](#developing)
 - [Functions](#functions)
 - [API Implementation Status](#api-implementation-status)
 
@@ -19,6 +19,7 @@ which indicates if the item is a song, album or artist. Other than this, the
 API request is untouched (other than the JSON -> alist parsing).
 
 ## Requirements
+
 - Emacs 30.1 or higher for built-in JSON support.
 - `plz` (0.9 or higher) for HTTP requests.
 - An OpenSubsonic-compatible server.
@@ -50,24 +51,6 @@ Clone the repository and add it to your load-path:
   :ensure '(infrasonic :repo "kaibagley/infrasonic")
   ...)
 ```
-
-## Testing
-
-I have included a few ERT tests to prevent myself from cooking things.
-
-### Requirements
-
-- ERT (built-in to Emacs >24.1)
-
-### Running Tests
-
-The `.dir-locals.el` file handles loading ERT and adding the project to your load path, to ensure that test files can find and load `infrasonic`.
-
-To run tests within Emacs:
-
-1. Open the test file: `C-x C-f test/infrasonic-test.el`
-2. Load the test file: `M-x load-file`
-3. Run all tests: `M-x ert-run-tests-interactively`
 
 ## Usage
 
@@ -148,6 +131,24 @@ Below are some basic examples of the API functions
 ;; Get all songs recursively under an artist or album
 (infrasonic-get-all-songs my-music-client "id-123" :artist)
 ```
+
+## Developing
+
+I have included a few ERT tests to prevent myself from cooking things.
+
+### Requirements
+
+- ERT (built-in to Emacs >24.1)
+
+### Running Tests
+
+The `.dir-locals.el` file handles loading ERT and adding the project to your load path, to ensure that test files can find and load `infrasonic`.
+
+To run tests within Emacs:
+
+1. Open the test file: `C-x C-f test/infrasonic-test.el`
+2. Load the test file: `M-x load-file`
+3. Run all tests: `M-x ert-run-tests-interactively`
 
 ## Functions:
 
