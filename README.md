@@ -232,6 +232,7 @@ To run tests within Emacs:
 | `infrasonic-delete-bookmark`     | `deleteBookmark`                    | Parsed response                                          |
 | `infrasonic-get-bookmarks`       | `getBookmarks`                      | Parsed response                                          |
 | `infrasonic-scrobble`            | `scrobble`                          | Parsed response                                          |
+| `infrasonic-set-rating`          | `setRating`                         | Parsed response                                          |
 | `infrasonic-get-random-songs`    | `getRandomSongs`                    | List of n songs: `((song1) ...)`                         |
 | `infrasonic-search`              | `search3`                           | Flat list of results: `((artist1) (album1) (song1) ...)` |
 | `infrasonic-search-songs`        | `search3`                           | List of songs: `((song1) (song2) ...)`                   |
@@ -290,7 +291,7 @@ no plans to support podcasts or music videos.
 | deleteShare                | Not planned                      |
 | getPodcasts                |                                  |
 | getShares                  | Not planned                      |
-| setRating                  |                                  |
+| setRating                  | `infrasonic-set-rating`          |
 | updateShare                | Not planned                      |
 | *1.8.0*                    |                                  |
 | getAlbum                   | `infrasonic-get-album`           |
