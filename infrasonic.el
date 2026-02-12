@@ -664,6 +664,24 @@ data."
                        `(("id" . ,item-id))
                        callback errback))
 
+;;; Rating
+
+(defun infrasonic-set-rating (client item-id rating &optional callback errback)
+  "Set ITEM-ID's rating to RATING (0-5).
+Returns the parsed API response.
+
+RATING must be an integer between 0 and 5 inclusive.
+A RATING of 0 removes the rating.
+
+CALLBACK and ERRBACK are optional parameters enabling asynchronous requests."
+  (unless (and (integerp rating) (<= 0 rating 5))
+    (signal 'infrasonic-error (list "Rating must be integer 0-5" rating)))
+  (infrasonic-api-call client
+                       "setRating"
+                       `(("id" . ,item-id)
+                         ("rating" . ,(number-to-string rating)))
+                       callback errback))
+
 ;;; Bookmark
 
 (defun infrasonic-create-bookmark (client song-id position &optional callback errback)
@@ -836,12 +854,12 @@ Optional arguments:
 
 This function uses a POST request since large playlists can return HTTP error
 414."
-  (let* ((body-list (cons `("id" ,playlist-id)
-                          (when name `("name" ,name))
-                          (when comment `("comment" ,comment))
-                          (when public-p `("public" "true"))
-                          (mapcar (lambda (id) (list "songId" id))
-                                  song-ids)))
+  (let* ((body-list (append (list `("id" ,playlist-id))
+                           (when name (list `("name" ,name)))
+                           (when comment (list `("comment" ,comment)))
+                           (when public-p (list '("public" "true")))
+                           (mapcar (lambda (id) (list "songId" id))
+                                   song-ids)))
          (body-list-filt (delq nil body-list))
          (body-str (url-build-query-string body-list-filt nil t)))
     (infrasonic-api-call client
