@@ -52,11 +52,8 @@
 ;; Functions signal `infrasonic-error' for local errors and
 ;; `infrasonic-api-error' for API failures.
 
-;; TODO: either use cl-defun, or move to using &rest plist for defun
-;; TODO: reimplement auth caching with the new client stuff
 ;; TODO: changelog file
 ;; TODO: contributing guide
-;; TODO: more comprehensive tests. perhaps use ai to generate because boring
 
 ;;; Code:
 
@@ -124,7 +121,10 @@ Defaults to 64.")
    200
    :type natnum
    :documentation "Default maximum results to return in any given API request. Defaults to
-200."))
+200.")
+  (cached-credentials
+   nil
+   :documentation "Cached auth-source credentials. Not set by the user."))
 
 (defun infrasonic-make-client (&rest plist)
   "Return an `infrasonic' client PLIST.
@@ -240,6 +240,10 @@ Searches `auth-source' files for an entry with \":host\" matching client :url."
                            :require '(:user :secret)
                            :max 1)))
 
+(defun infrasonic-clear-credentials (client)
+  "Clear CLIENT's cached user credentials."
+  (setf (infrasonic-client-cached-credentials client) nil))
+
 (defun infrasonic--get-auth-params (client)
   "Return CLIENT's authentication info for Subsonic API calls.
 Return an alist of strings:
@@ -250,7 +254,12 @@ information."
   (let* ((host (infrasonic-client-url client))
          (api-version (infrasonic-client-api-version client))
          (user-agent (infrasonic-client-user-agent client))
-         (creds (or (infrasonic--get-credentials client)
+         ;; Check cred cache first, if miss, then set cache
+         (creds (or (infrasonic-client-cached-credentials client)
+                    (let ((fnd (infrasonic--get-credentials client)))
+                      (when fnd
+                        (setf (infrasonic-client-cached-credentials client) fnd))
+                      fnd)
                     (signal 'infrasonic-error
                             (list "No auth-source entry found for host" host))))
          (user (plist-get creds :user))
@@ -591,9 +600,8 @@ TYPE may be:
 - `:byname': Alphabetically sorted by name.
 - `:byartist': Alphabetically sorted by artist.
 
-OFFSET is the depth of pagination pages we want to access. That is,
-return results from CLIENT's (max-search-results * OFFSET)
-to (max-search-results * OFFSET - 1)"
+OFFSET is the depth of results we want to access. That is, return
+results from OFFSET to (or N max-search-results) + OFFSET."
   (let* ((n-albums (or n (infrasonic-client-search-max-results client)))
          (list-type (pcase type
                       (:random "random")
@@ -625,16 +633,16 @@ Returns a N length list of parsed JSON songs.
 
 Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\".
 
-OFFSET is the depth of pagination pages we want to access. That is,
-return results from CLIENT's (max-search-results * OFFSET)
-to (max-search-results * OFFSET - 1)"
+OFFSET is the depth of results we want to access. That is, return
+results from OFFSET to (or N max-search-results) + OFFSET."
   (let ((n-songs (or n (infrasonic-client-search-max-results client))))
     (infrasonic--get-many client
                           "getRandomSongs"
                           '(randomSongs song)
-                          `(("size" . ,(number-to-string n-songs))
-                            ,(when offset
-                               `(("offset" . ,(number-to-string offset)))))
+                          (append
+                           `(("size" . ,(number-to-string n-songs)))
+                           (when offset
+                             `(("offset" . ,(number-to-string offset)))))
                           :song)))
 
 ;;; getSongsByGenre
@@ -643,17 +651,17 @@ to (max-search-results * OFFSET - 1)"
   "Get N songs in GENRE using CLIENT.
 Returns a list of songs.
 
-OFFSET is the depth of pagination pages we want to access. That is,
-return results from CLIENT's (max-search-results * OFFSET)
-to (max-search-results * OFFSET - 1)"
+OFFSET is the depth of results we want to access. That is, return
+results from OFFSET to (or N max-search-results) + OFFSET."
   (let ((n-songs (or n (infrasonic-client-search-max-results client))))
     (infrasonic--get-many client
                           "getSongsByGenre"
                           '(songsByGenre song)
-                          `(("genre" . ,genre)
-                            ("count" . ,(number-to-string n-songs))
-                            ,(when offset
-                               `(("offset" . ,(number-to-string offset)))))
+                          (append
+                           `(("genre" . ,genre)
+                             ("count" . ,(number-to-string n-songs)))
+                           (when offset
+                             `(("offset" . ,(number-to-string offset)))))
                           :song)))
 
 ;;;; getNowPlaying
@@ -816,16 +824,16 @@ Returns a flat list of items:
 Each item is a list with an added element `subsonic-type', and songs
 have the `name' element added.
 
-OFFSET is the depth of pagination pages we want to access. That is,
-return results from CLIENT's (max-search-results * OFFSET)
-to (max-search-results * OFFSET - 1)"
+OFFSET is the depth of results we want to access. That is, return
+results from OFFSET to (or N max-search-results) + OFFSET."
   (let* ((max-results (number-to-string (/ (infrasonic-client-search-max-results client) 3)))
-         (params `(("query" . ,query)
-                   ("artistCount" . ,max-results)
-                   ("albumCount" . ,max-results)
-                   ("songCount" . ,max-results)
-                   ,(when offset
-                      `(("offset" . ,(number-to-string offset))))))
+         (params (append
+                  `(("query" . ,query)
+                    ("artistCount" . ,max-results)
+                    ("albumCount" . ,max-results)
+                    ("songCount" . ,max-results))
+                  ,(when offset
+                     `(("offset" . ,(number-to-string offset))))))
          (response (infrasonic-api-call client "search3" params))
          (result (alist-get 'searchResult3 response))
          (artists (infrasonic--ensure-alist-list (alist-get 'artist result)))
