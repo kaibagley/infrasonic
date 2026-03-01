@@ -514,7 +514,7 @@ CALLBACK is called on the parsed song alist."
                          (funcall callback
                                   (infrasonic--standardise (alist-get 'song response)
                                                            :song)))
-   errback))
+                       errback))
 
 ;;; getArtistInfo2
 
@@ -542,7 +542,7 @@ Returns the parsed list of album attributes."
 (defun infrasonic-get-similar-songs (client artist-id &optional n)
   "Get N random songs from ARTIST-ID and from similar artists using CLIENT.
 Returns a list of songs."
-  (let ((n-songs (or n (infrasonic-client-search-max-results client)))
+  (let ((n-songs (or n (infrasonic-client-search-max-results client))))
     (infrasonic--get-many client
                           "getSimilarSongs2"
                           '(similarSongs2 song)
@@ -897,11 +897,11 @@ Optional arguments:
 This function uses a POST request since large playlists can return HTTP error
 414."
   (let* ((body-list (append (list `("id" ,playlist-id))
-                           (when name (list `("name" ,name)))
-                           (when comment (list `("comment" ,comment)))
-                           (when public-p (list '("public" "true")))
-                           (mapcar (lambda (id) (list "songId" id))
-                                   song-ids)))
+                            (when name (list `("name" ,name)))
+                            (when comment (list `("comment" ,comment)))
+                            (when public-p (list '("public" "true")))
+                            (mapcar (lambda (id) (list "songId" id))
+                                    song-ids)))
          (body-list-filt (delq nil body-list))
          (body-str (url-build-query-string body-list-filt nil t)))
     (infrasonic-api-call client

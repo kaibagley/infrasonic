@@ -558,6 +558,79 @@ because `setf' on `alist-get' prepends new keys (changing the list head)."
       (should (equal (car result) '("Chill" . "1")))
       (should (equal (length result) 2)))))
 
+;;;; Art URL
+
+(ert-deftest infrasonic-test-get-art-url-default-size ()
+  "Art URL should use the client's default art-size."
+  (let ((client (infrasonic-test--make-client :art-size 256)))
+    (cl-letf (((symbol-function 'infrasonic--get-credentials)
+               (lambda (_) (list :user "u" :secret "p"))))
+      (let ((url (infrasonic--get-art-url client "al-1")))
+        (should (string-prefix-p "https://music.example.com/rest/getCoverArt.view?" url))
+        (should (string-match-p "id=al-1" url))
+        (should (string-match-p "size=256" url))))))
+
+(ert-deftest infrasonic-test-get-art-url-override-size ()
+  "Passing a size should override the client default."
+  (let ((client (infrasonic-test--make-client :art-size 64)))
+    (cl-letf (((symbol-function 'infrasonic--get-credentials)
+               (lambda (_) (list :user "u" :secret "p"))))
+      (let ((url (infrasonic--get-art-url client "al-1" 512)))
+        (should (string-match-p "size=512" url))
+        (should-not (string-match-p "size=64" url))))))
+
+;;;; Scrobble status mapping
+
+(ert-deftest infrasonic-test-scrobble-playing-sends-false ()
+  "Scrobbling :playing should send submission=false."
+  (let (captured-params)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint params &rest _)
+                 (setq captured-params params)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-scrobble client "song-1" :playing)
+        (should (equal (alist-get "submission" captured-params nil nil #'equal)
+                       "false"))
+        (should (equal (alist-get "id" captured-params nil nil #'equal)
+                       "song-1"))))))
+
+(ert-deftest infrasonic-test-scrobble-finished-sends-true ()
+  "Scrobbling :finished should send submission=true."
+  (let (captured-params)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint params &rest _)
+                 (setq captured-params params)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-scrobble client "song-1" :finished)
+        (should (equal (alist-get "submission" captured-params nil nil #'equal)
+                       "true"))))))
+
+;;;; Star endpoint selection
+
+(ert-deftest infrasonic-test-star-uses-star-endpoint ()
+  "Starring an item should call the \"star\" endpoint."
+  (let (captured-endpoint)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client endpoint &rest _)
+                 (setq captured-endpoint endpoint)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-star client "id-1" t)
+        (should (equal captured-endpoint "star"))))))
+
+(ert-deftest infrasonic-test-star-uses-unstar-endpoint ()
+  "Unstarring an item should call the \"unstar\" endpoint."
+  (let (captured-endpoint)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client endpoint &rest _)
+                 (setq captured-endpoint endpoint)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-star client "id-1" nil)
+        (should (equal captured-endpoint "unstar"))))))
+
 (provide 'infrasonic-test)
 
 ;;; infrasonic-test.el ends here
