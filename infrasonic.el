@@ -832,8 +832,8 @@ results from OFFSET to (or N max-search-results) + OFFSET."
                     ("artistCount" . ,max-results)
                     ("albumCount" . ,max-results)
                     ("songCount" . ,max-results))
-                  ,(when offset
-                     `(("offset" . ,(number-to-string offset))))))
+                  (when offset
+                    `(("offset" . ,(number-to-string offset))))))
          (response (infrasonic-api-call client "search3" params))
          (result (alist-get 'searchResult3 response))
          (artists (infrasonic--ensure-alist-list (alist-get 'artist result)))

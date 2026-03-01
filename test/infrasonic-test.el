@@ -165,27 +165,6 @@
          (result (infrasonic--standardise item :song)))
     (should (equal (alist-get 'name result) "T"))))
 
-(ert-deftest infrasonic-test-standardise-returns-complete-alist ()
-  "Standardise should return an alist with original data plus new keys.
-Note: callers must use the return value, not the original binding,
-because `setf' on `alist-get' prepends new keys (changing the list head)."
-  (let* ((item (list (cons 'name "Song") (cons 'id "1")))
-         (result (infrasonic--standardise item :song)))
-    (should (eq (alist-get 'subsonic-type result) :song))
-    (should (equal (alist-get 'name result) "Song"))
-    (should (equal (alist-get 'id result) "1"))))
-
-(ert-deftest infrasonic-test-standardise-prepends-when-key-missing ()
-  "When 'name is missing, standardise prepends new keys (setf alist-get behavior)."
-  (let* ((item (list (cons 'title "Song") (cons 'id "1")))
-         (result (infrasonic--standardise item :song)))
-    ;; setf alist-get prepends, so result has a new head
-    (should (equal (alist-get 'name result) "Song"))
-    (should (eq (alist-get 'subsonic-type result) :song))
-    ;; The original cons cells are still in the returned list
-    (should (equal (alist-get 'title result) "Song"))
-    (should (equal (alist-get 'id result) "1"))))
-
 (ert-deftest infrasonic-test-standardise-list ()
   "Standardise-list should tag every item in the list."
   (let* ((items (list (list (cons 'name "A") (cons 'id "1"))
@@ -630,6 +609,84 @@ because `setf' on `alist-get' prepends new keys (changing the list head)."
       (let ((client (infrasonic-test--make-client)))
         (infrasonic-star client "id-1" nil)
         (should (equal captured-endpoint "unstar"))))))
+
+;;;; Credential caching
+
+(ert-deftest infrasonic-test-auth-caches-credentials ()
+  "Auth params should cache credentials after first lookup."
+  (let ((client (infrasonic-test--make-client))
+        (call-count 0))
+    (cl-letf (((symbol-function 'infrasonic--get-credentials)
+               (lambda (_)
+                 (cl-incf call-count)
+                 (list :user "u" :secret "p"))))
+      ;; First call: cache miss, hits get-credentials
+      (infrasonic--get-auth-params client)
+      (should (equal call-count 1))
+      ;; Second call: cache hit, should NOT call get-credentials again
+      (infrasonic--get-auth-params client)
+      (should (equal call-count 1)))))
+
+(ert-deftest infrasonic-test-clear-credentials ()
+  "Clearing credentials should force a fresh lookup on next call."
+  (let ((client (infrasonic-test--make-client))
+        (call-count 0))
+    (cl-letf (((symbol-function 'infrasonic--get-credentials)
+               (lambda (_)
+                 (cl-incf call-count)
+                 (list :user "u" :secret "p"))))
+      (infrasonic--get-auth-params client)
+      (should (equal call-count 1))
+      (infrasonic-clear-credentials client)
+      (should (null (infrasonic-client-cached-credentials client)))
+      ;; Next call should hit get-credentials again
+      (infrasonic--get-auth-params client)
+      (should (equal call-count 2)))))
+
+;;;; Standardise in-place mutation
+
+(ert-deftest infrasonic-test-standardise-eq-with-nconc ()
+  "Standardise should now return the same cons cell (eq) via nconc."
+  (let* ((item (list (cons 'name "Song") (cons 'id "1")))
+         (result (infrasonic--standardise item :song)))
+    (should (eq item result))
+    (should (eq (alist-get 'subsonic-type result) :song))
+    (should (equal (alist-get 'name result) "Song"))))
+
+(ert-deftest infrasonic-test-standardise-eq-when-name-missing ()
+  "Standardise should still be eq even when name must be added."
+  (let* ((item (list (cons 'title "Song") (cons 'id "1")))
+         (result (infrasonic--standardise item :song)))
+    (should (eq item result))
+    (should (equal (alist-get 'name result) "Song"))))
+
+;;;; Update playlist with nil song-ids
+
+(ert-deftest infrasonic-test-update-playlist-nil-songs-no-songid ()
+  "Passing nil for song-ids should not include any songId in the body."
+  (let (captured-body)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint _params _callback _errback body &rest _)
+                 (setq captured-body body)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-update-playlist client "pl-1" nil "New Name")
+        (should (stringp captured-body))
+        (should (string-match-p "id=pl-1" captured-body))
+        (should (string-match-p "name=New" captured-body))
+        (should-not (string-match-p "songId" captured-body))))))
+
+(ert-deftest infrasonic-test-update-playlist-with-songs-includes-songid ()
+  "Passing song-ids should include songId params in the body."
+  (let (captured-body)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint _params _callback _errback body &rest _)
+                 (setq captured-body body)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-update-playlist client "pl-1" '("s1" "s2") "My Playlist")
+        (should (string-match-p "songId=s1" captured-body))
+        (should (string-match-p "songId=s2" captured-body))))))
 
 (provide 'infrasonic-test)
 
