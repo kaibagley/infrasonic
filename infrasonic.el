@@ -149,7 +149,7 @@ Should be comprised of (default values):
 
 (defun infrasonic--standardise (item type)
   "Standardise ITEM of TYPE.
-Returns the standardised ITEM
+Returns the standardised ITEM. Also standardises ITEM in-place.
 
 Ensures a \"name\" element exists in ITEM, and add a \"subsonic-type\"
 element according to the ITEMs TYPE."
@@ -157,8 +157,10 @@ element according to the ITEMs TYPE."
                   (alist-get 'title item)
                   (alist-get 'artist item)
                   (alist-get 'album item))))
-    (setf (alist-get 'subsonic-type item) type)
-    (setf (alist-get 'name item) name))
+    (nconc item (list (cons 'subsonic-type type)))
+    (if (alist-get 'name item)
+        (setf (alist-get 'name item) name) ; in place update
+      (nconc item (list (cons 'name name)))))
   item)
 
 (defun infrasonic--standardise-list (items type)
