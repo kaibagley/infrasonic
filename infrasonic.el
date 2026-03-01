@@ -6,7 +6,7 @@
 ;; Maintainer: Kai Bagley <kaibagley+github@proton.mail>
 ;; Keywords: multimedia
 ;; Package-Requires: ((emacs "30") (plz "0.9"))
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; URL: https://github.com/kaibagley/infrasonic
 
 ;; This program is free software; you can redistribute it and/or modify

@@ -11,7 +11,8 @@ music servers such as Gonic, Navidrome, etc. It is designed for use in other
 Emacs packages wishing to implement OpenSubsonic compatibility.
 
 It handles authentication, request signing, and JSON parsing. Authentication is
-handled with `auth-source` using the OpenSubsonic token/salt authentication method.
+handled with `auth-source` using the OpenSubsonic token/salt authentication
+method.
 
 `infrasonic` also ensures consistency between songs, albums and artists by
 adding a "name" element to songs. A "subsonic-type" element is added too,
@@ -142,13 +143,40 @@ I have included a few ERT tests to prevent myself from cooking things.
 
 ### Running Tests
 
-The `.dir-locals.el` file handles loading ERT and adding the project to your load path, to ensure that test files can find and load `infrasonic`.
+The `.dir-locals.el` file handles loading ERT and adding the project to your
+load path, to ensure that test files can find and load `infrasonic`.
 
 To run tests within Emacs:
 
 1. Open the test file: `C-x C-f test/infrasonic-test.el`
 2. Load the test file: `M-x load-file`
 3. Run all tests: `M-x ert-run-tests-interactively`
+
+## Security
+
+Annoyingly, the OpenSubsonic and Subsonic APIs require a very insecure token
+generation method:
+
+1. Generate a salt string (good).
+2. Calculate the auth token: `token = md5(concat(password, salt))` (pretty bad).
+
+In practice, this may not be a huge issue, but the MD5 hash function is
+cryptographically weak and can easily be broken using a rainbow table or
+another simple brute-force attack. You should assume that your credentials CAN
+AND WILL be recovered when NOT USING HTTPS. *You should always use HTTPS when
+using the (Open)Subsonic API*.
+
+This is an issue with the (Open)Subsonic API specifications, not any particular
+client implementation. OpenSubsonic has specified an API key extension to
+alleviate this issue (see
+[[https://opensubsonic.netlify.app/docs/extensions/apikeyauth/]]), however I
+don't believe it has been adopted widely (Navidrome and Gonic don't currently
+support it).
+
+Credentials are sourced from `auth-source`, and cached in memory in the
+`infrasonic-client` struct. They are never written to disk by Infrasonic.
+However, tokens and salts are visible within Emacs' process buffers while
+API requests are being made.
 
 ## Functions:
 
@@ -221,7 +249,7 @@ To run tests within Emacs:
 |----------------------------------|-------------------------------------|----------------------------------------------------------|
 | `infrasonic-get-stream-url`      | `stream`                            | Complete URL string for streaming                        |
 | `infrasonic-ping`                | `ping`                              | `nil` (Displays success/failure message)                 |
-| `infrasonic-get-artists`         | `getArtists`                        | Flat list of artists: `((artist1) (artist2) ...)`        |
+| `infrasonic-get-artists`         | `getArtists`                        | Nested index of artists: `(("a" . (artist1)...) ...)`    |
 | `infrasonic-get-artist`          | `getArtist`                         | Flat list of albums: `((album1) (album2) ...)`           |
 | `infrasonic-get-album`           | `getAlbum`                          | Flat list of songs: `((song1) (song2) ...)`              |
 | `infrasonic-get-playlists`       | `getPlaylists`                      | Alist of names/IDs: `((name . id) ...)`                  |
@@ -241,7 +269,6 @@ To run tests within Emacs:
 | `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                      |
 | `infrasonic-get-genres`          | `getGenres`                         | List of genres: `((genre1) (genre2) ...)`                |
 | `infrasonic-update-playlist`     | `updatePlaylist`                    | Parsed response                                          |
-| `infrasonic-get-art-url`         | Builds `getCoverArt` URL            | Complete URL string for image resource                   |
 | `infrasonic-download-art`        | `getCoverArt`                       | A `plz-queue`                                            |
 | `infrasonic-download-music`      | `getSong` and `download`            | A `plz-queue`                                            |
 | `infrasonic-children`            | `getArtists`/`getArtist`/`getAlbum` | List of items (artists, albums, or songs)                |
