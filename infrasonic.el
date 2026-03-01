@@ -52,9 +52,6 @@
 ;; Functions signal `infrasonic-error' for local errors and
 ;; `infrasonic-api-error' for API failures.
 
-;; TODO: changelog file
-;; TODO: contributing guide
-
 ;;; Code:
 
 ;;;; Requirements
