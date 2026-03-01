@@ -19,6 +19,24 @@ adding a "name" element to songs. A "subsonic-type" element is added too,
 which indicates if the item is a song, album or artist. Other than this, the
 API request is untouched (other than the JSON -> alist parsing).
 
+## AI Usage Disclaimer
+
+I'm aware that many people have strong opinions about the use of AI in software
+projects. I will try to best outline how I used it in the creation of this
+package.
+
+The ERT test suite is more-or-less 100% AI created. I find writing unit tests
+boring, and I'm sure many others would agree, so I don't see a real issue with
+just mass-creating unit tests. The tests have been reviewed by me (an
+emacs-lisp rookie), and I would say the have pretty good coverage and seem
+quite sane.
+
+The main code is 100% written by me, with infrequent Q&A's with one AI chatbot
+or another for things I am unfamiliar with in Elisp. At worst, I may have
+followed a general algorithm suggested by an AI, but 99% of my AI use in this
+file is simply "Is this an idiomatic way to write this function?", or "Do you
+see any issues with this?", "How do I do <xyz> in elisp?".
+
 ## Requirements
 
 - Emacs 30.1 or higher for built-in JSON support.

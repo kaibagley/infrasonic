@@ -1,4 +1,4 @@
-;;; infrasonic.el --- Subsonic server support for Emacs         -*- lexical-binding: t; -*-
+;;; infrasonic.el --- OpenSubsonic client library   -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026  Kai Bagley <kaibagley+github@proton.mail>
 
@@ -355,7 +355,8 @@ CALLBACK must be provided.
 The JSON should usually be processed by `infrasonic--process-api-response'."
   (cl-check-type client infrasonic-client)
   (when (and queue (not (functionp callback)))
-    (signal 'infrasonic-error (list "Queued API calls must be asynchronous, ensure CALLBACK is a function")))
+    (signal 'infrasonic-error
+            (list "Queued API calls must be asynchronous")))
   (let* ((api-params (append (infrasonic--get-auth-params client) params))
          (api-url (infrasonic--build-url client endpoint api-params))
          (api-headers '(("Accept-Encoding" . "gzip")
