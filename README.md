@@ -269,6 +269,9 @@ API requests are being made.
 | `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                      |
 | `infrasonic-get-genres`          | `getGenres`                         | List of genres: `((genre1) (genre2) ...)`                |
 | `infrasonic-update-playlist`     | `updatePlaylist`                    | Parsed response                                          |
+| `infrasonic-get-play-queue`      | `getPlayQueue`                      | Play queue alist                                         |
+| `infrasonic-save-play-queue`     | `savePlayQueue`                     | Parsed response                                          |
+| `infrasonic-get-lyrics`          | `getLyrics`                         | Lyrics alist                                             |
 | `infrasonic-download-art`        | `getCoverArt`                       | A `plz-queue`                                            |
 | `infrasonic-download-music`      | `getSong` and `download`            | A `plz-queue`                                            |
 | `infrasonic-children`            | `getArtists`/`getArtist`/`getAlbum` | List of items (artists, albums, or songs)                |
@@ -303,7 +306,7 @@ no plans to support podcasts or music videos.
 | deletePlaylist             | `infrasonic-delete-playlist`     |
 | getAlbumList               | Not planned                      |
 | getChatMessages            | Not planned                      |
-| getLyrics                  |                                  |
+| getLyrics                  | `infrasonic-get-lyrics`          |
 | getRandomSongs             | `infrasonic-get-random-songs`    |
 | jukeboxControl             | Not planned                      |
 | *1.3.0*                    |                                  |
@@ -322,7 +325,7 @@ no plans to support podcasts or music videos.
 | updateShare                | Not planned                      |
 | *1.8.0*                    |                                  |
 | getAlbum                   | `infrasonic-get-album`           |
-| getAlbumList2              |                                  |
+| getAlbumList2              | `infrasonic-get-album-list`      |
 | getArtist                  | `infrasonic-get-artist`          |
 | getArtists                 | `infrasonic-get-artists`         |
 | getAvatar                  |                                  |
@@ -351,13 +354,13 @@ no plans to support podcasts or music videos.
 | *1.10.1*                   |                                  |
 | updateUser                 | Not planned                      |
 | *1.11.0*                   |                                  |
-| getArtistInfo              |                                  |
-| getArtistInfo2             |                                  |
-| getSimilarSongs            |                                  |
+| getArtistInfo              | Not planned                      |
+| getArtistInfo2             | `infrasonic-get-album-info`      |
+| getSimilarSongs            | Not planned                      |
 | getSimilarSongs2           | `infrasonic-get-similar-songs`   |
 | *1.12.0                    |                                  |
-| getPlayQueue               |                                  |
-| savePlayQueue              |                                  |
+| getPlayQueue               | `infrasonic-get-play-queue`      |
+| savePlayQueue              | `infrasonic-save-play-queue`     |
 | *1.13.0*                   |                                  |
 | getNewestPodcasts          | Maybe                            |
 | getTopSongs                | `infrasonic-get-top-songs`       |

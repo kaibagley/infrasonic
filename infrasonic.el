@@ -1,6 +1,6 @@
 ;;; infrasonic.el --- Subsonic server support for Emacs         -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026  Free Software Foundation, Inc.
+;; Copyright (C) 2026  Kai Bagley <kaibagley+github@proton.mail>
 
 ;; Author: Kai Bagley <kaibagley+github@proton.mail>
 ;; Maintainer: Kai Bagley <kaibagley+github@proton.mail>
@@ -678,6 +678,42 @@ Returns a list of alists:
                         nil
                         :song))
 
+;;; getPlayQueue
+
+(defun infrasonic-get-play-queue (client)
+  "Get the current user's play queue using CLIENT.
+Returns a play queue alist containing current song, position, and a list
+of songs in the queue."
+  (infrasonic--get-one client
+                       "getPlayQueue"
+                       'playQueue))
+
+;;; savePlayQueue
+
+(defun infrasonic-save-play-queue (client song-ids &optional current position callback errback)
+  "Save the play queue for the current user using CLIENT.
+Returns the parsed API response.
+
+SONG-IDS is a list of song ID strings to include in the queue.
+
+CURRENT is the ID of the currently playing song.
+
+POSITION is the playback position in milliseconds of the current song.
+
+CALLBACK and ERRBACK enable asynchronous requests."
+  (let* ((id-params (mapcar (lambda (id)
+                              (list "id" id))
+                            song-ids))
+         (body-list (append id-params
+                            (when current (list `("current" ,current)))
+                            (when position (list `("position" ,(number-to-string position))))))
+         (body-str (url-build-query-string body-list nil t)))
+    (infrasonic-api-call client
+                         "savePlayQueue"
+                         nil
+                         callback errback
+                         body-str)))
+
 ;;; Playlists
 
 (defun infrasonic-get-playlists (client)
@@ -856,6 +892,21 @@ Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
                           `(("query" . ,query)
                             ("songCount" . ,(number-to-string n-songs)))
                           :song)))
+
+;;; getLyrics
+
+(defun infrasonic-get-lyrics (client &optional artist title)
+  "Search for lyrics matching ARTIST and TITLE using CLIENT.
+Returns a lyrics alist with `artist', `title', and `value' which
+contains the text, or nil if no lyrics are found.
+
+Both ARTIST and TITLE are optional but improve search results."
+  (infrasonic--get-one client
+                       "getLyrics"
+                       'lyrics
+                       (append
+                        (when artist `(("artist" . ,artist)))
+                        (when title `(("title" . ,title))))))
 
 ;;; Bulk get songs
 

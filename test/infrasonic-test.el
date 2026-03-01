@@ -1,6 +1,6 @@
 ;;; infrasonic-test.el --- Tests for infrasonic         -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026  Free Software Foundation, Inc.
+;; Copyright (C) 2026  Kai Bagley <kaibagley+github@proton.mail>
 
 ;; Author: Kai Bagley <kaibagley+github@proton.mail>
 ;; Maintainer: Kai Bagley <kaibagley+github@proton.mail>
@@ -687,6 +687,103 @@
         (infrasonic-update-playlist client "pl-1" '("s1" "s2") "My Playlist")
         (should (string-match-p "songId=s1" captured-body))
         (should (string-match-p "songId=s2" captured-body))))))
+
+;;;; Play queue
+
+(ert-deftest infrasonic-test-get-play-queue ()
+  "Should return the play queue alist from the response."
+  (cl-letf (((symbol-function 'infrasonic-api-call)
+             (lambda (&rest _)
+               '((playQueue
+                  (entry ((id . "s1") (title . "Song One"))
+                         ((id . "s2") (title . "Song Two")))
+                  (current . "s1")
+                  (position . 45000))))))
+    (let* ((client (infrasonic-test--make-client))
+           (result (infrasonic-get-play-queue client)))
+      (should result)
+      (should (equal (alist-get 'current result) "s1"))
+      (should (equal (alist-get 'position result) 45000)))))
+
+(ert-deftest infrasonic-test-save-play-queue-sends-song-ids ()
+  "Should include all song IDs in the POST body."
+  (let (captured-body)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint _params _callback _errback body &rest _)
+                 (setq captured-body body)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-save-play-queue client '("s1" "s2" "s3"))
+        (should (stringp captured-body))
+        (should (string-match-p "id=s1" captured-body))
+        (should (string-match-p "id=s2" captured-body))
+        (should (string-match-p "id=s3" captured-body))))))
+
+(ert-deftest infrasonic-test-save-play-queue-with-current-and-position ()
+  "Should include current and position params when provided."
+  (let (captured-body)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint _params _callback _errback body &rest _)
+                 (setq captured-body body)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-save-play-queue client '("s1") "s1" 30000)
+        (should (string-match-p "current=s1" captured-body))
+        (should (string-match-p "position=30000" captured-body))))))
+
+(ert-deftest infrasonic-test-save-play-queue-without-optional-params ()
+  "Should not include current or position when not provided."
+  (let (captured-body)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint _params _callback _errback body &rest _)
+                 (setq captured-body body)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-save-play-queue client '("s1"))
+        (should-not (string-match-p "current" captured-body))
+        (should-not (string-match-p "position" captured-body))))))
+
+;;;; Lyrics
+
+(ert-deftest infrasonic-test-get-lyrics-with-artist-and-title ()
+  "Should pass artist and title params and return lyrics alist."
+  (let (captured-params)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint params &rest _)
+                 (setq captured-params params)
+                 '((lyrics (artist . "Muse")
+                           (title . "Hysteria")
+                           (value . "It's bugging me"))))))
+      (let* ((client (infrasonic-test--make-client))
+             (result (infrasonic-get-lyrics client "Muse" "Hysteria")))
+        (should (equal (alist-get "artist" captured-params nil nil #'equal) "Muse"))
+        (should (equal (alist-get "title" captured-params nil nil #'equal) "Hysteria"))
+        (should (equal (alist-get 'artist result) "Muse"))
+        (should (equal (alist-get 'value result) "It's bugging me"))))))
+
+(ert-deftest infrasonic-test-get-lyrics-artist-only ()
+  "Should include artist but not title when title is nil."
+  (let (captured-params)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint params &rest _)
+                 (setq captured-params params)
+                 '((lyrics (artist . "Muse") (value . "Some lyrics"))))))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-get-lyrics client "Muse" nil)
+        (should (equal (alist-get "artist" captured-params nil nil #'equal) "Muse"))
+        (should-not (assoc "title" captured-params))))))
+
+(ert-deftest infrasonic-test-get-lyrics-no-params ()
+  "Should send no extra params when both artist and title are nil."
+  (let (captured-params)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint params &rest _)
+                 (setq captured-params params)
+                 '((lyrics (value . "Some lyrics"))))))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-get-lyrics client nil nil)
+        (should-not (assoc "artist" captured-params))
+        (should-not (assoc "title" captured-params))))))
 
 (provide 'infrasonic-test)
 
