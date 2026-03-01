@@ -574,7 +574,7 @@ convert it to artist name for the request."
 
 ;;; getAlbumList2
 
-(defun infrasonic-get-album-list (client type &optional n)
+(defun infrasonic-get-album-list (client type &optional n offset)
   "Return a list of N albums according to TYPE using CLIENT.
 Returns a list of albums. Number returned is dictated by either N, or
 the CLIENT's default max search results by default.
@@ -587,7 +587,11 @@ TYPE may be:
 - `:recent': Recently added albums.
 - `:starred': Starred albums.
 - `:byname': Alphabetically sorted by name.
-- `:byartist': Alphabetically sorted by artist."
+- `:byartist': Alphabetically sorted by artist.
+
+OFFSET is the depth of pagination pages we want to access. That is,
+return results from CLIENT's (max-search-results * OFFSET)
+to (max-search-results * OFFSET - 1)"
   (let* ((n-albums (or n (infrasonic-client-search-max-results client)))
          (list-type (pcase type
                       (:random "random")
@@ -602,7 +606,9 @@ TYPE may be:
                   `(("type" . ,list-type)
                     ("size" . ,(number-to-string n-albums)))
                   (when (stringp type)
-                    `(("genre" . ,type))))))
+                    `(("genre" . ,type)))
+                  (when offset
+                    `(("offset" . ,(number-to-string offset)))))))
     (infrasonic--get-many client
                           "getAlbumList2"
                           '(albumList2 album)
@@ -611,29 +617,41 @@ TYPE may be:
 
 ;;; getRandomSongs
 
-(defun infrasonic-get-random-songs (client &optional n)
+(defun infrasonic-get-random-songs (client &optional n offset)
   "Fetch N random songs from the server using CLIENT.
 Returns a N length list of parsed JSON songs.
 
-Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
+Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\".
+
+OFFSET is the depth of pagination pages we want to access. That is,
+return results from CLIENT's (max-search-results * OFFSET)
+to (max-search-results * OFFSET - 1)"
   (let ((n-songs (or n (infrasonic-client-search-max-results client))))
     (infrasonic--get-many client
                           "getRandomSongs"
                           '(randomSongs song)
-                          `(("size" . ,(number-to-string n-songs)))
+                          `(("size" . ,(number-to-string n-songs))
+                            ,(when offset
+                               `(("offset" . ,(number-to-string offset)))))
                           :song)))
 
 ;;; getSongsByGenre
 
-(defun infrasonic-get-songs-by-genre (client genre &optional n)
+(defun infrasonic-get-songs-by-genre (client genre &optional n offset)
   "Get N songs in GENRE using CLIENT.
-Returns a list of songs."
+Returns a list of songs.
+
+OFFSET is the depth of pagination pages we want to access. That is,
+return results from CLIENT's (max-search-results * OFFSET)
+to (max-search-results * OFFSET - 1)"
   (let ((n-songs (or n (infrasonic-client-search-max-results client))))
     (infrasonic--get-many client
                           "getSongsByGenre"
                           '(songsByGenre song)
                           `(("genre" . ,genre)
-                            ("count" . ,(number-to-string n-songs)))
+                            ("count" . ,(number-to-string n-songs))
+                            ,(when offset
+                               `(("offset" . ,(number-to-string offset)))))
                           :song)))
 
 ;;;; getNowPlaying
@@ -785,7 +803,7 @@ the response data."
 
 ;;; Search
 
-(defun infrasonic-search (client query)
+(defun infrasonic-search (client query &optional offset)
   "Search for QUERY at \"search3\" endpoint for artists, albums and songs CLIENT.
 Returns a flat list of items:
 \(((subsonic-type . :artist) (name . ...) ...)
@@ -794,12 +812,18 @@ Returns a flat list of items:
   ((subsonic-type . :song) (name . ...) ...))
 
 Each item is a list with an added element `subsonic-type', and songs
-have the `name' element added."
+have the `name' element added.
+
+OFFSET is the depth of pagination pages we want to access. That is,
+return results from CLIENT's (max-search-results * OFFSET)
+to (max-search-results * OFFSET - 1)"
   (let* ((max-results (number-to-string (/ (infrasonic-client-search-max-results client) 3)))
          (params `(("query" . ,query)
                    ("artistCount" . ,max-results)
                    ("albumCount" . ,max-results)
-                   ("songCount" . ,max-results)))
+                   ("songCount" . ,max-results)
+                   ,(when offset
+                      `(("offset" . ,(number-to-string offset))))))
          (response (infrasonic-api-call client "search3" params))
          (result (alist-get 'searchResult3 response))
          (artists (infrasonic--ensure-alist-list (alist-get 'artist result)))
@@ -895,13 +919,20 @@ Optional arguments:
 - CALLBACK and ERRBACK will make the API call asynchronous.
 
 This function uses a POST request since large playlists can return HTTP error
-414."
+414.
+
+The \"updatePlaylist\" will wipe all songs when song-ids is set to nil
+in the URL. This is probably best handled by \"deletePlaylist\" so we
+ensure that \"song-ids=nil\" is never passed to the endpoint. However,
+passing nil to this function as SONG-IDS, will NOT send the \"song-ids\"
+param, and will allow simple renaming of the playlist."
   (let* ((body-list (append (list `("id" ,playlist-id))
                             (when name (list `("name" ,name)))
                             (when comment (list `("comment" ,comment)))
                             (when public-p (list '("public" "true")))
-                            (mapcar (lambda (id) (list "songId" id))
-                                    song-ids)))
+                            (when song-ids
+                              (mapcar (lambda (id) (list "songId" id))
+                                      song-ids))))
          (body-list-filt (delq nil body-list))
          (body-str (url-build-query-string body-list-filt nil t)))
     (infrasonic-api-call client
