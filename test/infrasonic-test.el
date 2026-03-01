@@ -319,6 +319,18 @@ because `setf' on `alist-get' prepends new keys (changing the list head)."
          (url (infrasonic--build-url client "ping" nil)))
     (should-not (string-suffix-p "?" url))))
 
+;;;; URL testing
+
+(ert-deftest infrasonic-test-get-stream-url ()
+  "Verify URL contains song ID and auth params."
+  (let ((client (infrasonic-test--make-client)))
+    (cl-letf (((symbol-function 'infrasonic--get-credentials)
+               (lambda (_) (list :user "u" :secret "p"))))
+      (let ((url (infrasonic-get-stream-url client "song-42")))
+        (should (string-prefix-p "https://music.example.com/rest/stream.view?" url))
+        (should (string-match-p "id=song-42" url))
+        (should (string-match-p "u=u" url))))))
+
 ;;;; Response parsing
 
 (ert-deftest infrasonic-test-process-response-ok ()
@@ -510,6 +522,18 @@ because `setf' on `alist-get' prepends new keys (changing the list head)."
     (should-error (infrasonic-set-rating client "id" "3")
                   :type 'infrasonic-error)))
 
+(ert-deftest infrasonic-test-set-rating-sends-correct-params ()
+  "Ensure that the right params are actually sent."
+  (let (captured-params)
+    (cl-letf (((symbol-function 'infrasonic-api-call)
+               (lambda (_client _endpoint params &rest _)
+                 (setq captured-params params)
+                 nil)))
+      (let ((client (infrasonic-test--make-client)))
+        (infrasonic-set-rating client "song-1" 3)
+        (should (equal (alist-get "id" captured-params nil nil #'equal) "song-1"))
+        (should (equal (alist-get "rating" captured-params nil nil #'equal) "3"))))))
+
 (ert-deftest infrasonic-test-scrobble-invalid-status ()
   "Scrobble with an invalid status should signal an error."
   (let ((client (infrasonic-test--make-client)))
@@ -520,6 +544,19 @@ because `setf' on `alist-get' prepends new keys (changing the list head)."
   "Passing a non-client struct to api-call should signal a type error."
   (should-error (infrasonic-api-call '(:url "example.com") "ping")
                 :type 'wrong-type-argument))
+
+;;;; Playlists
+
+(ert-deftest infrasonic-test-get-playlists-shape ()
+  "Ensure that playlists have consistent shape of ((name . id) ...)."
+  (cl-letf (((symbol-function 'infrasonic-api-call)
+             (lambda (&rest _)
+               '((playlists (playlist ((id . "1") (name . "Chill"))
+                                     ((id . "2") (name . "Rock"))))))))
+    (let* ((client (infrasonic-test--make-client))
+           (result (infrasonic-get-playlists client)))
+      (should (equal (car result) '("Chill" . "1")))
+      (should (equal (length result) 2)))))
 
 (provide 'infrasonic-test)
 
