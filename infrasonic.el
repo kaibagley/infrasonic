@@ -76,11 +76,6 @@
 
 ;;;; Customisation
 
-;; Defaults
-
-;; TODO: remove at some stage?
-(defconst infrasonic--default-search-max-results 200)
-
 ;; Errors
 
 (define-error 'infrasonic-error "Infrasonic error")
@@ -388,7 +383,7 @@ Returns a complete URL for MPV or VLC to directly stream from the server."
   "Ping the server using CLIENT to check connectivity and authentication.
 Returns nil, only displaying a success or failure message.
 
-When non-nil, CALLBACK and ERRBACK will enable an asyncronous request,
+When non-nil, CALLBACK and ERRBACK will enable an asynchronous request,
 and are the callback and error callback functions respectively."
   (if (functionp callback)
       (infrasonic-api-call client "ping" nil callback errback)
@@ -547,7 +542,7 @@ Returns the parsed list of album attributes."
 (defun infrasonic-get-similar-songs (client artist-id &optional n)
   "Get N random songs from ARTIST-ID and from similar artists using CLIENT.
 Returns a list of songs."
-  (let ((n-songs (or n infrasonic--default-search-max-results)))
+  (let ((n-songs (or n (infrasonic-client-search-max-results client)))
     (infrasonic--get-many client
                           "getSimilarSongs2"
                           '(similarSongs2 song)
@@ -565,7 +560,7 @@ Note that the endpoint requires the artist's name, not the ID. This
 function uses ARTIST-ID for convenience, and performs a lookup to
 convert it to artist name for the request."
   (let ((artist-name (alist-get 'name (infrasonic-get-artist client artist-id)))
-        (n-songs (or n infrasonic--default-search-max-results)))
+        (n-songs (or n (infrasonic-client-search-max-results client))))
     (unless (and (stringp artist-name) (not (string-empty-p artist-name)))
       (signal 'infrasonic-error (list "Artist name is missing" artist-id)))
     (infrasonic--get-many client
@@ -582,7 +577,7 @@ convert it to artist name for the request."
 (defun infrasonic-get-album-list (client type &optional n)
   "Return a list of N albums according to TYPE using CLIENT.
 Returns a list of albums. Number returned is dictated by either N, or
-`infrasonic--default-search-max-results' by default.
+the CLIENT's default max search results by default.
 
 TYPE may be:
 - A genre string, for example: \"Rock\".
@@ -593,7 +588,7 @@ TYPE may be:
 - `:starred': Starred albums.
 - `:byname': Alphabetically sorted by name.
 - `:byartist': Alphabetically sorted by artist."
-  (let* ((n-albums (or n infrasonic--default-search-max-results))
+  (let* ((n-albums (or n (infrasonic-client-search-max-results client)))
          (list-type (pcase type
                       (:random "random")
                       (:newest "newest")
@@ -621,7 +616,7 @@ TYPE may be:
 Returns a N length list of parsed JSON songs.
 
 Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
-  (let ((n-songs (or n infrasonic--default-search-max-results)))
+  (let ((n-songs (or n (infrasonic-client-search-max-results client))))
     (infrasonic--get-many client
                           "getRandomSongs"
                           '(randomSongs song)
@@ -633,7 +628,7 @@ Uses OpenSubsonic API's \"getRandomSongs\" with N as the \"size\"."
 (defun infrasonic-get-songs-by-genre (client genre &optional n)
   "Get N songs in GENRE using CLIENT.
 Returns a list of songs."
-  (let ((n-songs (or n infrasonic--default-search-max-results)))
+  (let ((n-songs (or n (infrasonic-client-search-max-results client))))
     (infrasonic--get-many client
                           "getSongsByGenre"
                           '(songsByGenre song)
@@ -800,7 +795,7 @@ Returns a flat list of items:
 
 Each item is a list with an added element `subsonic-type', and songs
 have the `name' element added."
-  (let* ((max-results (number-to-string (/ infrasonic--default-search-max-results 3)))
+  (let* ((max-results (number-to-string (/ (infrasonic-client-search-max-results client) 3)))
          (params `(("query" . ,query)
                    ("artistCount" . ,max-results)
                    ("albumCount" . ,max-results)
@@ -820,7 +815,7 @@ have the `name' element added."
 Returns a list of parsed JSON songs.
 
 Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
-  (let ((n-songs (or n infrasonic--default-search-max-results)))
+  (let ((n-songs (or n (infrasonic-client-search-max-results client))))
     (infrasonic--get-many client
                           "search3"
                           '(searchResult3 song)
