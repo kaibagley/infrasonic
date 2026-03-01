@@ -55,10 +55,9 @@ Clone the repository and add it to your load-path:
 
 ## Usage
 
-`infrasonic` requires you to create a *client*, which is simply a plist
-containing a few important details. The client is passed as the first argument
-to the `infrasonic` API functions, allowing multiple clients to be used at
-once.
+`infrasonic` requires you to create a *client*, which is a struct containing a
+few important details. The client is passed as the first argument to the
+`infrasonic` API functions, allowing multiple clients to be used at once.
 
 1. Authentication
 
@@ -86,7 +85,7 @@ It can be done as follows:
    :api-version        ; ("1.16.1")
    :queue-limit        ; (5)              Limit of concurrent downloads of art and music
    :timeout            ; (300)            HTTP request timeout for downloads of art and music
-   :art-size           ; (64)             Edge size in pixels to dowload cover art
+   :art-size           ; (64)             Edge size in pixels to download cover art
    :search-max-results ; (200))           Max results to return in query searches
 ```
 
@@ -247,11 +246,16 @@ API requests are being made.
 
 | Function name                    | API endpoint                        | Returns                                                  |
 |----------------------------------|-------------------------------------|----------------------------------------------------------|
+| `infrasonic-get-license`         | `getLicense`                        | License alist                                            |
 | `infrasonic-get-stream-url`      | `stream`                            | Complete URL string for streaming                        |
 | `infrasonic-ping`                | `ping`                              | `nil` (Displays success/failure message)                 |
 | `infrasonic-get-artists`         | `getArtists`                        | Nested index of artists: `(("a" . (artist1)...) ...)`    |
+| `infrasonic-get-artists-flat`    | `getArtists`                        | Flat list of artists: `(("a" . (artist1)...) ...)`       |
 | `infrasonic-get-artist`          | `getArtist`                         | Flat list of albums: `((album1) (album2) ...)`           |
+| `infrasonic-get-artist-info`     | `getArtistInfo2`                    | Artist info alist                                        |
 | `infrasonic-get-album`           | `getAlbum`                          | Flat list of songs: `((song1) (song2) ...)`              |
+| `infrasonic-get-album-info`      | `getAlbumInfo2`                     | Album info alist                                        |
+| `infrasonic-get-album-list`      | `getAlbumList2`                     | List of albums                                        |
 | `infrasonic-get-playlists`       | `getPlaylists`                      | Alist of names/IDs: `((name . id) ...)`                  |
 | `infrasonic-get-playlist-songs`  | `getPlaylist`                       | List of songs: `((song1) (song2) ...)`                   |
 | `infrasonic-get-starred-songs`   | `getStarred2`                       | List of songs: `((song1) (song2) ...)`                   |
@@ -264,7 +268,13 @@ API requests are being made.
 | `infrasonic-get-random-songs`    | `getRandomSongs`                    | List of n songs: `((song1) ...)`                         |
 | `infrasonic-search`              | `search3`                           | Flat list of results: `((artist1) (album1) (song1) ...)` |
 | `infrasonic-search-songs`        | `search3`                           | List of songs: `((song1) (song2) ...)`                   |
+| `infrasonic-get-song`            | `getSong`                           | Song alist                                               |
+| `infrasonic-get-song-async`      | `getSong`                           | `plz` process object                                     |
 | `infrasonic-get-all-songs`       | `getArtist` / `getAlbum`            | List of songs: `((song1) (song2) ...)`                   |
+| `infrasonic-get-similar-songs`   | `getSimilarSongs2`                  | List of songs                                            |
+| `infrasonic-get-songs-by-genre`  | `getSongsByGenre`                   | List of songs                                            |
+| `infrasonic-get-top-songs`       | `getTopSongs`                       | List of songs                                            |
+| `infrasonic-get-now-playing`     | `getNowPlaying`                     | List of songs with usernames                             |
 | `infrasonic-create-playlist`     | `createPlaylist`                    | Playlist object: `((id . "1") (name . "foo") ...)`       |
 | `infrasonic-delete-playlist`     | `deletePlaylist`                    | `t` (if successful)                                      |
 | `infrasonic-get-genres`          | `getGenres`                         | List of genres: `((genre1) (genre2) ...)`                |
@@ -291,7 +301,7 @@ no plans to support podcasts or music videos.
 | getLicense                 | `infrasonic-get-license`         |
 | getMusicDirectory          | Not planned                      |
 | getMusicFolders            | Not planned                      |
-| getNowPlaying              |                                  |
+| getNowPlaying              | `infrasonic-get-now-playing`     |
 | getPlaylist                | `infrasonic-get-playlist-songs`  |
 | getPlaylists               | `infrasonic-get-playlists`       |
 | ping                       | `infrasonic-ping`                |
@@ -355,7 +365,7 @@ no plans to support podcasts or music videos.
 | updateUser                 | Not planned                      |
 | *1.11.0*                   |                                  |
 | getArtistInfo              | Not planned                      |
-| getArtistInfo2             | `infrasonic-get-album-info`      |
+| getArtistInfo2             | `infrasonic-get-artist-info`     |
 | getSimilarSongs            | Not planned                      |
 | getSimilarSongs2           | `infrasonic-get-similar-songs`   |
 | *1.12.0                    |                                  |
