@@ -20,7 +20,7 @@ which indicates if the item is a song, album or artist. Other than this, the
 API request is untouched (other than the JSON -> alist parsing).
 
 Details on the OpenSubsonic API can be seen
-(here)[https://github.com/opensubsonic/open-subsonic-api]. It is a set of
+[here](https://github.com/opensubsonic/open-subsonic-api). It is a set of
 improvements and extensions to the existing Subsonic API. Both of these APIs
 are widely used for music streaming, with major self-hosted examples being
 Navidrome, Gonic and Airsonic.
@@ -191,10 +191,10 @@ using the (Open)Subsonic API*.
 
 This is an issue with the (Open)Subsonic API specifications, not any particular
 client implementation. OpenSubsonic has specified an API key extension to
-alleviate this issue (see
-[[https://opensubsonic.netlify.app/docs/extensions/apikeyauth/]]), however I
-don't believe it has been adopted widely (Navidrome and Gonic don't currently
-support it).
+alleviate this issue (see [this OpenSubsonic
+extension](https://opensubsonic.netlify.app/docs/extensions/apikeyauth/)),
+however I don't believe it has been adopted widely (Navidrome and Gonic don't
+currently support it).
 
 Credentials are sourced from `auth-source`, and cached in memory in the
 `infrasonic-client` struct. They are never written to disk by Infrasonic.
