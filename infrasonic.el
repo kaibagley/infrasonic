@@ -253,10 +253,8 @@ information."
          (user-agent (infrasonic-client-user-agent client))
          ;; Check cred cache first, if miss, then set cache
          (creds (or (infrasonic-client-cached-credentials client)
-                    (let ((fnd (infrasonic--get-credentials client)))
-                      (when fnd
-                        (setf (infrasonic-client-cached-credentials client) fnd))
-                      fnd)
+                    (when-let* ((fnd (infrasonic--get-credentials client)))
+                      (setf (infrasonic-client-cached-credentials client) fnd))
                     (signal 'infrasonic-error
                             (list "No auth-source entry found for host" host))))
          (user (plist-get creds :user))
@@ -311,7 +309,7 @@ Should be called from a buffer containing an API response."
              (status (alist-get 'status response)))
         (unless response
           (signal 'infrasonic-api-error (list "Bad or missing response data" json-data)))
-        (unless (and (stringp status) (string-equal "ok" status))
+        (unless (equal "ok" status)
           (let* ((err (alist-get 'error response))
                  (msg (alist-get 'message err))
                  (cod (alist-get 'code err)))
@@ -381,8 +379,6 @@ Returns a complete URL for MPV or VLC to directly stream from the server."
                          "stream"
                          (append (infrasonic--get-auth-params client)
                                  `(("id" . ,song-id)))))
-
-;;;;; Endpoints
 
 ;;;; System
 
@@ -613,10 +609,10 @@ results from OFFSET to (or N max-search-results) + OFFSET."
          (params (append
                   `(("type" . ,list-type)
                     ("size" . ,(number-to-string n-albums)))
-                  (when (stringp type)
-                    `(("genre" . ,type)))
-                  (when offset
-                    `(("offset" . ,(number-to-string offset)))))))
+                  (and (stringp type)
+                       `(("genre" . ,type)))
+                  (and offset
+                       `(("offset" . ,(number-to-string offset)))))))
     (infrasonic--get-many client
                           "getAlbumList2"
                           '(albumList2 album)
@@ -703,8 +699,8 @@ CALLBACK and ERRBACK enable asynchronous requests."
                               (list "id" id))
                             song-ids))
          (body-list (append id-params
-                            (when current (list `("current" ,current)))
-                            (when position (list `("position" ,(number-to-string position))))))
+                            (and current (list `("current" ,current)))
+                            (and position (list `("position" ,(number-to-string position))))))
          (body-str (url-build-query-string body-list nil t)))
     (infrasonic-api-call client
                          "savePlayQueue"
@@ -948,12 +944,11 @@ This function uses a POST request since large playlists can return HTTP error
                                         nil
                                         callback errback
                                         body-str)))
-    (if playlist
-        (progn
-          (message "Playlist '%s' was created with '%d' songs."
-                   name (length song-ids))
-          playlist)
-      (signal 'infrasonic-error (list "Playlist was not created.")))))
+    (unless playlist
+      (signal 'infrasonic-error (list "Playlist was not created.")))
+    (message "Playlist '%s' was created with '%d' songs."
+             name (length song-ids))
+          playlist))
 
 (defun infrasonic-delete-playlist (client playlist-id &optional callback errback)
   "Delete a Subsonic playlist with PLAYLIST-ID using CLIENT.
@@ -986,12 +981,12 @@ ensure that \"song-ids=nil\" is never passed to the endpoint. However,
 passing nil to this function as SONG-IDS, will NOT send the \"song-ids\"
 param, and will allow simple renaming of the playlist."
   (let* ((body-list (append (list `("id" ,playlist-id))
-                            (when name (list `("name" ,name)))
-                            (when comment (list `("comment" ,comment)))
-                            (when public-p (list '("public" "true")))
-                            (when song-ids
-                              (mapcar (lambda (id) (list "songId" id))
-                                      song-ids))))
+                            (and name (list `("name" ,name)))
+                            (and comment (list `("comment" ,comment)))
+                            (and public-p (list '("public" "true")))
+                            (and song-ids
+                                 (mapcar (lambda (id) (list "songId" id))
+                                         song-ids))))
          (body-list-filt (delq nil body-list))
          (body-str (url-build-query-string body-list-filt nil t)))
     (infrasonic-api-call client
@@ -1126,12 +1121,10 @@ LEVEL determines the endpoint to use, and may be one of:
 - :artists: Returns top-level view of all artists using endpoint \"getArtists\".
 - :artist: Returns albums for an artist using \"getArtist\".
 - :album: Returns songs in an album using \"getAlbum\"."
-  (let ((items
-         (pcase level
-           (:artists (infrasonic-get-artists-flat client))
-           (:artist (alist-get 'album (infrasonic-get-artist client id)))
-           (:album (alist-get 'song (infrasonic-get-album client id))))))
-    items))
+  (pcase level
+    (:artists (infrasonic-get-artists-flat client))
+    (:artist (alist-get 'album (infrasonic-get-artist client id)))
+    (:album (alist-get 'song (infrasonic-get-album client id)))))
 
 (provide 'infrasonic)
 
