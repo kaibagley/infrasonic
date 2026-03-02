@@ -708,7 +708,7 @@ CALLBACK and ERRBACK enable asynchronous requests."
                          callback errback
                          body-str)))
 
-;;; Playlists
+;;; getPlaylists
 
 (defun infrasonic-get-playlists (client)
   "Fetch all of the user's playlists from the server using CLIENT.
@@ -723,6 +723,8 @@ Returns an alist mapping playlist names to their IDs: ((name . id) ...)."
                     (format "%s" (alist-get 'id item))))
             items)))
 
+;;; getPlaylist
+
 (defun infrasonic-get-playlist-songs (client playlist-id)
   "Fetch all songs in playlist with PLAYLIST-ID using CLIENT.
 Returns a list of parsed JSON songs."
@@ -732,7 +734,7 @@ Returns a list of parsed JSON songs."
                         `(("id" . ,playlist-id))
                         :song))
 
-;;; Star
+;;; getStarred2
 
 (defun infrasonic-get-starred-songs (client)
   "Fetch all starred songs from the server using CLIENT.
@@ -745,7 +747,7 @@ Returns a list of parsed JSON songs."
 
 ;;;; Setters
 
-;;; Star
+;;; star/unstar
 
 (defun infrasonic-star (client item-id star-p &optional callback errback)
   "Set ITEM-ID's star status according to STAR-P using CLIENT.
@@ -762,7 +764,7 @@ data."
                        `(("id" . ,item-id))
                        callback errback))
 
-;;; Rating
+;;; setRating
 
 (defun infrasonic-set-rating (client item-id rating &optional callback errback)
   "Set ITEM-ID's rating to RATING (0-5) using CLIENT.
@@ -780,7 +782,7 @@ CALLBACK and ERRBACK are optional parameters enabling asynchronous requests."
                          ("rating" . ,(number-to-string rating)))
                        callback errback))
 
-;;; Bookmark
+;;; createBookmark
 
 (defun infrasonic-create-bookmark (client song-id position &optional callback errback)
   "Create or update a bookmark for song with SONG-ID at POSITION using CLIENT.
@@ -796,6 +798,8 @@ the response data."
                          ("position" . ,(format "%s" position)))
                        callback errback))
 
+;;; deleteBookmark
+
 (defun infrasonic-delete-bookmark (client song-id &optional callback errback)
   "Delete the bookmark on song with SONG-ID using CLIENT.
 Returns the parsed API response.
@@ -807,6 +811,8 @@ the response data."
                        "deleteBookmark"
                        `(("id" . ,song-id))
                        callback errback))
+
+;;; getBookmarks
 
 (defun infrasonic-get-bookmarks (client &optional callback errback)
   "Gets all bookmarks for the user using CLIENT.
@@ -820,7 +826,7 @@ the response data, ERRBACK will evaluate if an error is returned."
                        nil
                        callback errback))
 
-;;; Scrobble
+;;; scrobble
 
 (defun infrasonic-scrobble (client song-id status &optional callback errback)
   "Scrobble STATUS for the song with SONG-ID to the Subsonic API using CLIENT.
@@ -841,7 +847,7 @@ the response data."
                          params
                          callback errback)))
 
-;;; Search
+;;; search3
 
 (defun infrasonic-search (client query &optional offset)
   "Search for QUERY at \"search3\" endpoint for artists, albums and songs CLIENT.

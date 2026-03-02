@@ -19,6 +19,12 @@ adding a "name" element to songs. A "subsonic-type" element is added too,
 which indicates if the item is a song, album or artist. Other than this, the
 API request is untouched (other than the JSON -> alist parsing).
 
+Details on the OpenSubsonic API can be seen
+(here)[https://github.com/opensubsonic/open-subsonic-api]. It is a set of
+improvements and extensions to the existing Subsonic API. Both of these APIs
+are widely used for music streaming, with major self-hosted examples being
+Navidrome, Gonic and Airsonic.
+
 ## AI Usage Disclaimer
 
 I'm aware that many people have strong opinions about the use of AI in software
