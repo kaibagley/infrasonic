@@ -34,6 +34,17 @@
 ;;   (subsonic-type . :artist/:album/:song/:playlist/:genre), and
 ;;   (name . "...")
 ;;
+;; Background:
+;;
+;; OpenSubsonic is a REST API that is a community extension/continuation of the
+;; Subsonic API, adding/clarifying/improving a lot of the functionality of the
+;; original Subsonic API. Subsonic is an unmaintained proprietary self-hosted
+;; music server, that implemented the Subsonic REST API to allow third-party
+;; clients to use the service.
+;;
+;; Current free software implementations of the OpenSubsonic API include
+;; Navidrome (GPL-3.0), Gonic (GPL-3.0), and others.
+;;
 ;; Configuration:
 ;;
 ;; Create a client with `infrasonic-make-client', and pass it to API functions.
