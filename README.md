@@ -10,6 +10,13 @@ Infrasonic is an Emacs library for interacting with OpenSubsonic-compatible
 music servers such as Gonic, Navidrome, etc. It is designed for use in other
 Emacs packages wishing to implement compatibility with the OpenSubsonic API.
 
+OpenSubsonic is a open, community-maintained REST API specification for music
+streaming servers. There are several free software music servers that implement
+this specification such as Navidrome (GPL-3.0) and Gonic (GPL-3.0), which allow
+users to stream personal music libraries from their own hardware. Infrasonic is
+a client library for communicating with this API in emacs-lisp. Details on the
+OpenSubsonic API can be found [here](https://opensubsonic.netlify.app).
+
 Infrasonic handles authentication, request signing, and JSON parsing.
 Authentication is handled with `auth-source` using the OpenSubsonic token/salt
 authentication method.
@@ -23,8 +30,6 @@ adding:
 Other than this, the API response is untouched (other than the JSON -> alist
 parsing).
 
-Details on the OpenSubsonic API can be seen
-[here](https://opensubsonic.netlify.app).
 
 ## AI Usage Disclaimer
 
