@@ -6,24 +6,25 @@
 - [Functions](#functions)
 - [API Implementation Status](#api-implementation-status)
 
-`infrasonic` is an Emacs library for interacting with OpenSubsonic-compatible
+Infrasonic is an Emacs library for interacting with OpenSubsonic-compatible
 music servers such as Gonic, Navidrome, etc. It is designed for use in other
-Emacs packages wishing to implement OpenSubsonic compatibility.
+Emacs packages wishing to implement compatibility with the OpenSubsonic API.
 
-It handles authentication, request signing, and JSON parsing. Authentication is
-handled with `auth-source` using the OpenSubsonic token/salt authentication
-method.
+Infrasonic handles authentication, request signing, and JSON parsing.
+Authentication is handled with `auth-source` using the OpenSubsonic token/salt
+authentication method.
 
-`infrasonic` also ensures consistency between songs, albums and artists by
-adding a "name" element to songs. A "subsonic-type" element is added too,
-which indicates if the item is a song, album or artist. Other than this, the
-API request is untouched (other than the JSON -> alist parsing).
+Infrasonic also ensures consistency between songs, albums and artists by
+adding:
+
+1. A `name` element to songs.
+2. A `infrasonic-type` element is added to everything, which indicates if the item is a song, album or artist.
+
+Other than this, the API response is untouched (other than the JSON -> alist
+parsing).
 
 Details on the OpenSubsonic API can be seen
-[here](https://github.com/opensubsonic/open-subsonic-api). It is a set of
-improvements and extensions to the existing Subsonic API. Both of these APIs
-are widely used for music streaming, with major self-hosted examples being
-Navidrome, Gonic and Airsonic.
+[here](https://opensubsonic.netlify.app).
 
 ## AI Usage Disclaimer
 
@@ -34,20 +35,20 @@ package.
 The ERT test suite is more-or-less 100% AI created. I find writing unit tests
 boring, and I'm sure many others would agree, so I don't see a real issue with
 just mass-creating unit tests. The tests have been reviewed by me (an
-emacs-lisp rookie), and I would say the have pretty good coverage and seem
+emacs-lisp rookie), and I would say they have pretty good coverage and seem
 quite sane.
 
 The main code is 100% written by me, with infrequent Q&A's with one AI chatbot
 or another for things I am unfamiliar with in Elisp. At worst, I may have
 followed a general algorithm suggested by an AI, but 99% of my AI use in this
 file is simply "Is this an idiomatic way to write this function?", or "Do you
-see any issues with this?", "How do I do <xyz> in elisp?".
+see any issues with this?", or "How do I do <xyz> in elisp?".
 
 ## Requirements
 
-- Emacs 30.1 or higher for built-in JSON support.
-- `plz` (0.9 or higher) for HTTP requests.
-- An OpenSubsonic-compatible server.
+- Emacs `>=30.1` or higher for built-in JSON support.
+- `plz` `>=0.9` (ELPA) for HTTP requests.
+- An OpenSubsonic-compatible server (Navidrome (GPL-3.0), Gonic (GPL-3.0), etc.).
 
 ## Installation
 
@@ -104,8 +105,8 @@ It can be done as follows:
    :url                ; (no default)     FQDN for OpenSubsonic server
    :protocol           ; ("https")        "http" or "https"
    :user-agent         ; ("infrasonic")   Name of your player
-   ;; Implemented Open Subsonic REST API version.
-   ;; See subsonic.org for the mapping between OpenSubsonic version and REST API version.
+   ;; Implemented OpenSubsonic REST API version.
+   ;; See  for the mapping between OpenSubsonic version and REST API version.
    :api-version        ; ("1.16.1")
    :queue-limit        ; (5)              Limit of concurrent downloads of art and music
    :timeout            ; (300)            HTTP request timeout for downloads of art and music
@@ -166,19 +167,18 @@ I have included a few ERT tests to prevent myself from cooking things.
 
 ### Running Tests
 
-The `.dir-locals.el` file handles loading ERT and adding the project to your
-load path, to ensure that test files can find and load `infrasonic`.
-
 To run tests within Emacs:
 
-1. Open the test file: `C-x C-f test/infrasonic-test.el`
-2. Load the test file: `M-x load-file`
-3. Run all tests: `M-x ert-run-tests-interactively`
+1. Require ERT: `M-: (require 'ert)`
+2. Add the project to your load path: `M-: (add-to-list 'load-path "/path/to/infrasonic")`
+3. Open the test file: `C-x C-f test/infrasonic-test.el`
+4. Load the test file: `M-x load-file`
+5. Run all tests: `M-x ert-run-tests-interactively`
 
 ## Security
 
-Annoyingly, the OpenSubsonic and Subsonic APIs require a very insecure token
-generation method:
+Annoyingly, the OpenSubsonic API requires a very insecure token generation
+method:
 
 1. Generate a salt string (good).
 2. Calculate the auth token: `token = md5(concat(password, salt))` (pretty bad).
@@ -187,9 +187,9 @@ In practice, this may not be a huge issue, but the MD5 hash function is
 cryptographically weak and can easily be broken using a rainbow table or
 another simple brute-force attack. You should assume that your credentials CAN
 AND WILL be recovered when NOT USING HTTPS. *You should always use HTTPS when
-using the (Open)Subsonic API*.
+using the OpenSubsonic API*.
 
-This is an issue with the (Open)Subsonic API specifications, not any particular
+This is an issue with the OpenSubsonic API specifications, not any particular
 client implementation. OpenSubsonic has specified an API key extension to
 alleviate this issue (see [this OpenSubsonic
 extension](https://opensubsonic.netlify.app/docs/extensions/apikeyauth/)),
@@ -210,11 +210,11 @@ API requests are being made.
 ``` emacs-lisp
 ;; This is an example of the full parsed JSON returned from `infrasonic-search'
 ;; to my gonic server.
-(((subsonic-type . :artist)
+(((infrasonic-type . :artist)
   (id . "ar-461")
   (name . "The Human Abstract")
   (albumCount . 5))
- ((subsonic-type . :album)
+ ((infrasonic-type . :album)
   (id . "al-6872")
   (created . "2024-03-14T19:47:03.288353577+08:00")
   (artistId . "ar-479")
@@ -233,7 +233,7 @@ API requests are being made.
   (year . 2016)
   (isCompilation)
   (releaseTypes "Album"))
- ((subsonic-type . :song)
+ ((infrasonic-type . :song)
   (name . "The Abstract of a Planet in Resolve (instrumental)")
   (id . "tr-7252")
   (album . "To Speak, To Listen")

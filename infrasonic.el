@@ -31,25 +31,23 @@
 ;; - HTTP requests using `plz'.
 ;; - JSON parsing.
 ;; - Response standardisation: items are tagged with:
-;;   (subsonic-type . :artist/:album/:song/:playlist/:genre), and
+;;   (infrasonic-type . :artist/:album/:song/:playlist/:genre), and
 ;;   (name . "...")
 ;;
 ;; Background:
 ;;
-;; OpenSubsonic is a REST API that is a community extension/continuation of the
-;; Subsonic API, adding/clarifying/improving a lot of the functionality of the
-;; original Subsonic API. Subsonic is an unmaintained proprietary self-hosted
-;; music server, that implemented the Subsonic REST API to allow third-party
-;; clients to use the service.
-;;
-;; Current free software implementations of the OpenSubsonic API include
-;; Navidrome (GPL-3.0), Gonic (GPL-3.0), and others.
+;; OpenSubsonic is a open, community-maintained REST API specification for
+;; music streaming servers. There are several free software music servers that
+;; implement this specification such as Navidrome (GPL-3.0) and Gonic
+;; (GPL-3.0), which allow users to stream personal music libraries from their
+;; own hardware. Infrasonic is a client library for communicating with this API
+;; in emacs-lisp.
 ;;
 ;; Configuration:
 ;;
 ;; Create a client with `infrasonic-make-client', and pass it to API functions.
-;; Credentials come from `auth-source'. :host should be the client's :url
-;; (subsonic host).
+;; Credentials come from `auth-source'. :host should be the client's :url, the
+;; hostname for the OpenSubsonic compatible server.
 ;;
 ;; Data:
 ;;
@@ -159,13 +157,13 @@ Should be comprised of (default values):
   "Standardise ITEM of TYPE.
 Returns the standardised ITEM. Also standardises ITEM in-place.
 
-Ensures a \"name\" element exists in ITEM, and add a \"subsonic-type\"
+Ensures a \"name\" element exists in ITEM, and add a \"infrasonic-type\"
 element according to the ITEMs TYPE."
   (let ((name (or (alist-get 'name item)
                   (alist-get 'title item)
                   (alist-get 'artist item)
                   (alist-get 'album item))))
-    (nconc item (list (cons 'subsonic-type type)))
+    (nconc item (list (cons 'infrasonic-type type)))
     (if (alist-get 'name item)
         (setf (alist-get 'name item) name) ; in place update
       (nconc item (list (cons 'name name)))))
@@ -253,7 +251,7 @@ Searches `auth-source' files for an entry with \":host\" matching client :url."
   (setf (infrasonic-client-cached-credentials client) nil))
 
 (defun infrasonic--get-auth-params (client)
-  "Return CLIENT's authentication info for Subsonic API calls.
+  "Return CLIENT's authentication info for OpenSubsonic API calls.
 Return an alist of strings:
 \((\"u\" . \"myusername\") (\"t\" . \"<randomstring>\") ...).
 
@@ -381,7 +379,7 @@ The JSON should usually be processed by `infrasonic--process-api-response'."
      :else (or errback
                (lambda (err)
                  (signal 'infrasonic-api-error
-                         (list "Subsonic API request error" err)))))))
+                         (list "OpenSubsonic API request error" err)))))))
 
 (defun infrasonic-get-stream-url (client song-id)
   "Create a streaming URL using CLIENT for song with SONG-ID.
@@ -423,7 +421,7 @@ Returns the parsed license response."
 
 (defun infrasonic-get-genres (client)
   "Get a list of all genres from the server using CLIENT.
-Returns a list of genre alists, with (subsonic-type . :genre) appended
+Returns a list of genre alists, with (infrasonic-type . :genre) appended
 to each genre."
   (infrasonic--get-many client
                         "getGenres"
@@ -766,10 +764,11 @@ Returns the parsed API response.
 
 ITEM-ID may be an artist, album or song ID.
 
-Send a request to the \"star\" or \"unstar\" Subsonic endpoints, star (when
-STAR-P is non-nil) or unstar ITEM-ID.
-CALLBACK is passed to `infrasonic-api-call' and is evaluated on the response
-data."
+Send a request to the \"star\" or \"unstar\" OpenSubsonic endpoints,
+star (when STAR-P is non-nil) or unstar ITEM-ID.
+
+CALLBACK is passed to `infrasonic-api-call' and is evaluated on the
+response data."
   (infrasonic-api-call client
                        (if star-p "star" "unstar")
                        `(("id" . ,item-id))
@@ -840,7 +839,8 @@ the response data, ERRBACK will evaluate if an error is returned."
 ;;; scrobble
 
 (defun infrasonic-scrobble (client song-id status &optional callback errback)
-  "Scrobble STATUS for the song with SONG-ID to the Subsonic API using CLIENT.
+  "Scrobble STATUS for the song with SONG-ID to the OpenSubsonic API using
+CLIENT.
 Returns the parsed API response.
 
 STATUS may be either `:playing' or `:finished'. If CALLBACK is
@@ -863,12 +863,12 @@ the response data."
 (defun infrasonic-search (client query &optional offset)
   "Search for QUERY at \"search3\" endpoint for artists, albums and songs CLIENT.
 Returns a flat list of items:
-\(((subsonic-type . :artist) (name . ...) ...)
-  ((subsonic-type . :album) (name . ...) ...)
-  ((subsonic-type . :song) (name . ...) ...)
-  ((subsonic-type . :song) (name . ...) ...))
+\(((infrasonic-type . :artist) (name . ...) ...)
+  ((infrasonic-type . :album) (name . ...) ...)
+  ((infrasonic-type . :song) (name . ...) ...)
+  ((infrasonic-type . :song) (name . ...) ...))
 
-Each item is a list with an added element `subsonic-type', and songs
+Each item is a list with an added element `infrasonic-type', and songs
 have the `name' element added.
 
 OFFSET is the depth of results we want to access. That is, return
@@ -895,7 +895,7 @@ results from OFFSET to (or N max-search-results) + OFFSET."
   "Search the server for N songs matching QUERY using CLIENT.
 Returns a list of parsed JSON songs.
 
-Uses the Subsonic API's \"search3\" endpoint with QUERY as the search query."
+Uses the OpenSubsonic API's \"search3\" endpoint with QUERY as the search query."
   (let ((n-songs (or n (infrasonic-client-search-max-results client))))
     (infrasonic--get-many client
                           "search3"
@@ -968,7 +968,7 @@ This function uses a POST request since large playlists can return HTTP error
           playlist))
 
 (defun infrasonic-delete-playlist (client playlist-id &optional callback errback)
-  "Delete a Subsonic playlist with PLAYLIST-ID using CLIENT.
+  "Delete a OpenSubsonic playlist with PLAYLIST-ID using CLIENT.
 
 Providing CALLBACK and ERRBACK will make the API call asynchronous."
   (when (infrasonic-api-call client
