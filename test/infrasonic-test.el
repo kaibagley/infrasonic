@@ -121,21 +121,21 @@
   "Standardising a song should use `title' as `name'."
   (let* ((song '((title . "Test Song") (artist . "Test Artist") (id . "tr-1")))
          (result (infrasonic--standardise song :song)))
-    (should (eq (alist-get 'subsonic-type result) :song))
+    (should (eq (alist-get 'infrasonic-type result) :song))
     (should (equal (alist-get 'name result) "Test Song"))))
 
 (ert-deftest infrasonic-test-standardise-album-with-name ()
   "Standardising an album should preserve existing `name'."
   (let* ((album '((name . "Test Album") (artist . "Test Artist") (id . "al-1")))
          (result (infrasonic--standardise album :album)))
-    (should (eq (alist-get 'subsonic-type result) :album))
+    (should (eq (alist-get 'infrasonic-type result) :album))
     (should (equal (alist-get 'name result) "Test Album"))))
 
 (ert-deftest infrasonic-test-standardise-artist ()
   "Standardising an artist should set type and preserve name."
   (let* ((artist '((name . "Test Artist") (id . "ar-1")))
          (result (infrasonic--standardise artist :artist)))
-    (should (eq (alist-get 'subsonic-type result) :artist))
+    (should (eq (alist-get 'infrasonic-type result) :artist))
     (should (equal (alist-get 'name result) "Test Artist"))))
 
 (ert-deftest infrasonic-test-standardise-name-fallback-artist ()
@@ -173,7 +173,7 @@
          (result (infrasonic--standardise-list items :album)))
     (should (equal (length result) 3))
     (dolist (item result)
-      (should (eq (alist-get 'subsonic-type item) :album)))))
+      (should (eq (alist-get 'infrasonic-type item) :album)))))
 
 (ert-deftest infrasonic-test-standardise-list-empty ()
   "Standardise-list on an empty list should return nil."
@@ -650,7 +650,7 @@
   (let* ((item (list (cons 'name "Song") (cons 'id "1")))
          (result (infrasonic--standardise item :song)))
     (should (eq item result))
-    (should (eq (alist-get 'subsonic-type result) :song))
+    (should (eq (alist-get 'infrasonic-type result) :song))
     (should (equal (alist-get 'name result) "Song"))))
 
 (ert-deftest infrasonic-test-standardise-eq-when-name-missing ()

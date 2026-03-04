@@ -282,7 +282,7 @@ information."
   "Build an OpenSubsonic REST API URL from ENDPOINT and PARAMS using CLIENT.
 Returns a complete URL required to make an API call.
 
-ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp'
+ENDPOINT is the API method name, see `https://opensubsonic.netlify.app/docs/api-reference/'
 for details.
 PARAMS is an alist of query parameters."
   (let* ((host (infrasonic-client-url client))
@@ -344,7 +344,7 @@ object."
 If QUEUE is nil, return parsed JSON (sync) or the `plz' process object (async).
 If QUEUE is non-nil, return the `plz-queue'.
 
-ENDPOINT is the API method name, see `https://www.subsonic.org/pages/api.jsp'
+ENDPOINT is the API method name, see `https://opensubsonic.netlify.app/docs/api-reference/'
 for details.
 
 PARAMS is an alist of additional parameters.
