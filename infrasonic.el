@@ -38,10 +38,11 @@
 ;;
 ;; OpenSubsonic is a open, community-maintained REST API specification for
 ;; music streaming servers. There are several free software music servers that
-;; implement this specification such as Navidrome (GPL-3.0) and Gonic
-;; (GPL-3.0), which allow users to stream personal music libraries from their
-;; own hardware. Infrasonic is a client library for communicating with this API
-;; in emacs-lisp.
+;; implement this specification such as Navidrome (GNU GPL version 3 only) and
+;; Gonic (GNU GPL version 3 only), which allow users to stream personal music
+;; libraries from their own hardware. Infrasonic is a client library for
+;; communicating with this API in emacs-lisp. Details on the OpenSubsonic API
+;; can be found [here](https://opensubsonic.netlify.app).
 ;;
 ;; Configuration:
 ;;
